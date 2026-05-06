@@ -3,6 +3,9 @@ const nextConfig = {
   // Essential settings for Vercel deployment
   output: 'standalone',
   
+  // Enable compression
+  compress: true,
+  
   // Experimental features
   experimental: {
     serverActions: {

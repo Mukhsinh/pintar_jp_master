@@ -6,10 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Copy, Download, Building2 } from 'lucide-react'
-import type { 
-  KPICategory, 
-  KPIIndicator, 
+import { Plus, Copy, Download, Building2, FileSpreadsheet, FileText, ChevronDown } from 'lucide-react'
+import type {
+  KPICategory,
+  KPIIndicator,
   KPISubIndicator
 } from '@/lib/types/kpi.types'
 
@@ -19,6 +19,13 @@ import CategoryFormDialog from '@/components/kpi/CategoryFormDialog'
 import IndicatorFormDialog from '@/components/kpi/IndicatorFormDialog'
 import SubIndicatorFormDialog from '@/components/kpi/SubIndicatorFormDialog'
 import CopyStructureDialog from '@/components/kpi/CopyStructureDialog'
+import ExcelImportDialog from '@/components/kpi/ExcelImportDialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 interface Unit {
   id: string
@@ -43,6 +50,9 @@ export default function KPIConfigPage() {
   const [selectedIndicatorForSub, setSelectedIndicatorForSub] = useState<KPIIndicator | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
+
+  const selectedUnitData = units.find(u => u.id === selectedUnit)
+  const isMedicalUnit = selectedUnitData?.name.toUpperCase().includes('MEDIS') || selectedUnitData?.code === 'UK01'
 
   // Ensure component is mounted before loading data
   useEffect(() => {
@@ -85,7 +95,7 @@ export default function KPIConfigPage() {
           .select('*')
           .eq('unit_id', selectedUnit)
           .order('category'),
-        
+
         supabase
           .from('m_kpi_indicators')
           .select(`
@@ -94,7 +104,7 @@ export default function KPIConfigPage() {
           `)
           .eq('m_kpi_categories.unit_id', selectedUnit)
           .order('code'),
-        
+
         supabase
           .from('m_kpi_sub_indicators')
           .select(`
@@ -128,7 +138,7 @@ export default function KPIConfigPage() {
 
   useEffect(() => {
     if (!mounted) return
-    
+
     setError(null)
     loadUnits().catch((err) => {
       console.error('Failed to load units:', err)
@@ -139,7 +149,7 @@ export default function KPIConfigPage() {
 
   useEffect(() => {
     if (!mounted || !selectedUnit) return
-    
+
     setError(null)
     loadKPIStructure()
   }, [mounted, selectedUnit, loadKPIStructure])
@@ -249,7 +259,7 @@ export default function KPIConfigPage() {
 
     try {
       const supabase = createClient()
-      
+
       // Check if sub indicator is being used in realization data
       const { data: realizationData, error: checkError } = await supabase
         .from('t_realization')
@@ -312,7 +322,7 @@ export default function KPIConfigPage() {
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <h2 className="text-lg font-semibold text-red-800 mb-2">Terjadi Kesalahan</h2>
           <p className="text-red-700 mb-4">{error}</p>
-          <Button 
+          <Button
             onClick={() => {
               setError(null)
               loadUnits()
@@ -341,24 +351,29 @@ export default function KPIConfigPage() {
             <Download className="h-4 w-4 mr-2" />
             Petunjuk PDF
           </Button>
+
           {selectedUnit && (
-            <>
-              <Button
-                onClick={() => handleDownloadReport('excel')}
-                className="bg-green-600 hover:bg-green-700 text-white shadow-md hover:shadow-lg transition-all"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Laporan Excel
-              </Button>
-              <Button
-                onClick={() => handleDownloadReport('pdf')}
-                className="bg-red-600 hover:bg-red-700 text-white shadow-md hover:shadow-lg transition-all"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Laporan PDF
-              </Button>
-            </>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button className="bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transition-all">
+                  <Download className="h-4 w-4 mr-2" />
+                  Unduh Laporan
+                  <ChevronDown className="h-4 w-4 ml-2" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleDownloadReport('excel')} className="cursor-pointer">
+                  <FileSpreadsheet className="h-4 w-4 mr-2 text-green-600" />
+                  Format Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleDownloadReport('pdf')} className="cursor-pointer">
+                  <FileText className="h-4 w-4 mr-2 text-red-600" />
+                  Format PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
+
           <Button
             onClick={handleCopyStructure}
             className="bg-cyan-500 hover:bg-cyan-600 text-white shadow-md hover:shadow-lg transition-all"

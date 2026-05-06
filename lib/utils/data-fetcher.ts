@@ -15,25 +15,25 @@ export interface BatchQueryOptions {
 
 export class DataFetcher {
   private supabase: Awaited<ReturnType<typeof createClient>> | null = null
-  
+
   private async getSupabase() {
     if (!this.supabase) {
       this.supabase = await createClient()
     }
     return this.supabase
   }
-  
+
   /**
    * Batch fetch employees with their assessments/realizations for a period
    * Eliminates N+1 queries in calculation service
    */
   async getEmployeesWithKPIData(
-    unitId: string | null, 
+    unitId: string | null,
     period: string,
     options: BatchQueryOptions = {}
   ) {
     const { timeout = 10000, retries = 2 } = options
-    
+
     const supabase = await this.getSupabase()
     const query = supabase
       .from('m_employees')
@@ -58,9 +58,11 @@ export class DataFetcher {
             code,
             name,
             category_id,
+            basic_index_value,
             m_kpi_categories!inner (
               category,
-              unit_id
+              unit_id,
+              configuration_style
             )
           )
         ),
@@ -74,9 +76,11 @@ export class DataFetcher {
             target_value,
             weight_percentage,
             category_id,
+            basic_index_value,
             m_kpi_categories!inner (
               category,
-              unit_id
+              unit_id,
+              configuration_style
             )
           )
         )
@@ -84,21 +88,21 @@ export class DataFetcher {
       .eq('is_active', true)
       .eq('t_kpi_assessments.period', period)
       .eq('t_realization.period', period)
-    
+
     if (unitId) {
       query.eq('unit_id', unitId)
     }
-    
+
     return this.executeWithRetry(query, retries, timeout)
   }
-  
+
   /**
    * Batch fetch sidebar data (company info, unit name, notifications)
    * Eliminates multiple sequential queries in Sidebar component
    */
   async getSidebarData(userId: string, unitId?: string) {
     const supabase = await this.getSupabase()
-    
+
     const queries = [
       // Company info
       supabase
@@ -106,16 +110,16 @@ export class DataFetcher {
         .select('value')
         .eq('key', 'company_info')
         .maybeSingle(),
-      
+
       // Unit name (if applicable)
-      unitId ? 
+      unitId ?
         supabase
           .from('m_units')
           .select('name')
           .eq('id', unitId)
           .single() :
         Promise.resolve({ data: null, error: null }),
-      
+
       // Unread notifications count
       supabase
         .from('t_notifications')
@@ -123,16 +127,16 @@ export class DataFetcher {
         .eq('user_id', userId)
         .eq('is_read', false)
     ]
-    
+
     const results = await Promise.allSettled(queries)
-    
+
     return {
       companyInfo: results[0].status === 'fulfilled' ? (results[0].value as any).data?.value : null,
       unitName: results[1].status === 'fulfilled' ? (results[1].value as any).data?.name : null,
       unreadCount: results[2].status === 'fulfilled' ? (results[2].value as any).count || 0 : 0
     }
   }
-  
+
   /**
    * Get user employee data with caching
    * Eliminates repeated user data fetching patterns
@@ -158,14 +162,14 @@ export class DataFetcher {
       .eq('id', userId)
       .eq('is_active', true)
       .single()
-    
+
     if (error) throw error
     return data
   }
-  
+
   private async executeWithRetry<T>(
-    query: any, 
-    retries: number, 
+    query: any,
+    retries: number,
     timeout: number
   ): Promise<T> {
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -173,24 +177,24 @@ export class DataFetcher {
         const timeoutPromise = new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Query timeout')), timeout)
         )
-        
+
         const result = await Promise.race([query, timeoutPromise])
-        
+
         if (result.error) {
           throw result.error
         }
-        
+
         return result.data
       } catch (error) {
         if (attempt === retries) {
           throw error
         }
-        
+
         // Wait before retry (exponential backoff)
         await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000))
       }
     }
-    
+
     throw new Error('Max retries exceeded')
   }
 }

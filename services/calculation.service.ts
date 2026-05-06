@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import Decimal from 'decimal.js'
 import {
   calculateIndividualScore,
   calculateUnitAllocation,
@@ -9,6 +10,7 @@ import {
   calculateAchievementPercentage,
   calculateWeightedIndicatorScore,
   aggregateCategoryScore,
+  calculateActivityRupiah,
   toNumber,
 } from '@/lib/formulas/kpi-calculator'
 
@@ -18,6 +20,8 @@ interface IndicatorRealization {
   target_value: number
   weight_percentage: number
   category: 'P1' | 'P2' | 'P3'
+  is_activity: boolean
+  basic_index_value: number
 }
 
 interface ValidationError {
@@ -38,84 +42,89 @@ interface CalculationPrerequisites {
  */
 export async function calculateIndividualScores(period: string) {
   const supabase = await createClient()
-  
+
   // Get all active employees
   const { data: employees, error: empError } = await supabase
     .from('m_employees')
     .select('id, unit_id, tax_status')
     .eq('is_active', true)
-  
+
   if (empError) throw empError
-  
+
   const results = []
-  
+
   // Use batch query to eliminate N+1 problem
   const { dataFetcher } = await import('@/lib/utils/data-fetcher')
-  const employeesWithKPIData = await dataFetcher.getEmployeesWithKPIData(unitId, period)
-  
+  const employeesWithKPIData = await dataFetcher.getEmployeesWithKPIData(null, period) as any[]
+
   for (const employee of employeesWithKPIData) {
     // Process assessment data (preferred) or fallback to realization data
     let dataSource = 'assessment'
     let employeeData: any[] = employee.t_kpi_assessments || []
-    
+
     if (!employeeData || employeeData.length === 0) {
       dataSource = 'realization'
       employeeData = employee.t_realization || []
     }
-    
+
     // Group by category (P1, P2, P3)
     const p1Indicators: IndicatorRealization[] = []
     const p2Indicators: IndicatorRealization[] = []
     const p3Indicators: IndicatorRealization[] = []
-    
+
     employeeData.forEach((r: any) => {
       const indicator = r.m_kpi_indicators
       let category: string
       let targetValue: number
       let weightPercentage: number
-      
+
       if (dataSource === 'assessment') {
         // Assessment data already has target_value and weight_percentage
-        category = indicator.m_kpi_categories.category
+        const catData = indicator.m_kpi_categories
+        category = catData.category
         targetValue = r.target_value
         weightPercentage = r.weight_percentage
       } else {
         // Realization data gets these from the indicator
-        category = indicator.m_kpi_categories.category
+        const catData = indicator.m_kpi_categories
+        category = catData.category
         targetValue = indicator.target_value
         weightPercentage = indicator.weight_percentage
       }
-      
+
       const data: IndicatorRealization = {
         indicator_id: r.indicator_id,
         realization_value: r.realization_value,
         target_value: targetValue,
         weight_percentage: weightPercentage,
         category: category as 'P1' | 'P2' | 'P3',
+        is_activity: indicator.m_kpi_categories.configuration_style === 'activity',
+        basic_index_value: indicator.basic_index_value || 0
       }
-      
+
       if (category === 'P1') p1Indicators.push(data)
       else if (category === 'P2') p2Indicators.push(data)
       else if (category === 'P3') p3Indicators.push(data)
     })
-    
+
     // Calculate scores for each indicator
-    const calculateCategoryScore = (indicators: IndicatorRealization[]) => {
+    const calculateCategoryMetrics = (indicators: IndicatorRealization[]) => {
+      let totalIndexScore = 0
+      let totalActivityRupiah = 0
+
       const scores = indicators.map(ind => {
-        const achievement = calculateAchievementPercentage(
-          ind.realization_value,
-          ind.target_value
-        )
-        const weighted = calculateWeightedIndicatorScore(
-          toNumber(achievement),
-          ind.weight_percentage
-        )
-        
-        // Update the appropriate table with calculated values
-        if (dataSource === 'assessment') {
-          // Update assessment table
+        if (ind.is_activity) {
+          const actRupiah = calculateActivityRupiah(ind.realization_value, ind.basic_index_value)
+          totalActivityRupiah += actRupiah.toNumber()
+
+          // Still calculate indicator score for reference if needed, though weight is likely 0
+          const achievement = calculateAchievementPercentage(ind.realization_value, ind.target_value)
+          const weighted = calculateWeightedIndicatorScore(toNumber(achievement), ind.weight_percentage)
+
+          // Update table with calculated values
+          const table = dataSource === 'assessment' ? 't_kpi_assessments' : 't_realization'
           supabase
-            .from('t_kpi_assessments')
+            .from(table)
             .update({
               achievement_percentage: toNumber(achievement),
               score: toNumber(weighted),
@@ -124,10 +133,15 @@ export async function calculateIndividualScores(period: string) {
             .eq('employee_id', employee.id)
             .eq('period', period)
             .then()
+
+          return toNumber(weighted)
         } else {
-          // Update realization table
+          const achievement = calculateAchievementPercentage(ind.realization_value, ind.target_value)
+          const weighted = calculateWeightedIndicatorScore(toNumber(achievement), ind.weight_percentage)
+
+          const table = dataSource === 'assessment' ? 't_kpi_assessments' : 't_realization'
           supabase
-            .from('t_realization')
+            .from(table)
             .update({
               achievement_percentage: toNumber(achievement),
               score: toNumber(weighted),
@@ -136,34 +150,43 @@ export async function calculateIndividualScores(period: string) {
             .eq('employee_id', employee.id)
             .eq('period', period)
             .then()
+
+          return toNumber(weighted)
         }
-        
-        return toNumber(weighted)
       })
-      
-      return toNumber(aggregateCategoryScore(scores))
+
+      totalIndexScore = toNumber(aggregateCategoryScore(scores))
+      return { totalIndexScore, totalActivityRupiah }
     }
-    
-    const p1Score = calculateCategoryScore(p1Indicators)
-    const p2Score = calculateCategoryScore(p2Indicators)
-    const p3Score = calculateCategoryScore(p3Indicators)
-    
+
+    const p1Metrics = calculateCategoryMetrics(p1Indicators)
+    const p2Metrics = calculateCategoryMetrics(p2Indicators)
+    const p3Metrics = calculateCategoryMetrics(p3Indicators)
+
+    const combinedActivityRupiah = p1Metrics.totalActivityRupiah + p2Metrics.totalActivityRupiah + p3Metrics.totalActivityRupiah
+
     // Get category weights for this unit
     const { data: categories } = await supabase
       .from('m_kpi_categories')
       .select('category, weight_percentage')
       .eq('unit_id', employee.unit_id)
       .eq('is_active', true)
-    
+
     const weights = {
       p1: categories?.find(c => c.category === 'P1')?.weight_percentage || 0,
       p2: categories?.find(c => c.category === 'P2')?.weight_percentage || 0,
       p3: categories?.find(c => c.category === 'P3')?.weight_percentage || 0,
     }
-    
+
     // Calculate weighted individual score
-    const individualScores = calculateIndividualScore(p1Score, p2Score, p3Score, weights)
-    
+    const individualScores = calculateIndividualScore(
+      p1Metrics.totalIndexScore,
+      p2Metrics.totalIndexScore,
+      p3Metrics.totalIndexScore,
+      weights,
+      combinedActivityRupiah
+    )
+
     // Upsert to t_individual_scores with data source metadata
     const { error: upsertError } = await supabase
       .from('t_individual_scores')
@@ -177,28 +200,29 @@ export async function calculateIndividualScores(period: string) {
         p2_weighted: toNumber(individualScores.p2Weighted),
         p3_weighted: toNumber(individualScores.p3Weighted),
         individual_total_score: toNumber(individualScores.totalIndividualScore),
+        activity_rupiah: toNumber(individualScores.activityRupiah),
         individual_weight_percentage: 100, // Default, can be customized
         weighted_individual_score: toNumber(individualScores.totalIndividualScore),
         calculation_metadata: {
           data_source: dataSource,
           calculated_at: new Date().toISOString(),
           has_assessment_data: dataSource === 'assessment',
-          assessment_count: dataSource === 'assessment' ? assessments?.length : 0,
+          assessment_count: dataSource === 'assessment' ? employeeData?.length : 0,
           realization_count: dataSource === 'realization' ? employeeData?.length : 0,
         },
       }, {
         onConflict: 'employee_id,period'
       })
-    
+
     if (upsertError) throw upsertError
-    
+
     results.push({
       employee_id: employee.id,
       data_source: dataSource,
       ...individualScores,
     })
   }
-  
+
   return results
 }
 
@@ -208,7 +232,7 @@ export async function calculateIndividualScores(period: string) {
  */
 export async function getAssessmentDataSummary(period: string) {
   const supabase = await createClient()
-  
+
   const { data: summary, error } = await supabase
     .from('t_kpi_assessments')
     .select(`
@@ -239,9 +263,9 @@ export async function getAssessmentDataSummary(period: string) {
     `)
     .eq('period', period)
     .order('m_employees.full_name, m_kpi_categories.category, m_kpi_indicators.name')
-  
+
   if (error) throw error
-  
+
   return summary || []
 }
 
@@ -251,14 +275,14 @@ export async function getAssessmentDataSummary(period: string) {
  */
 export async function hasAssessmentData(period: string): Promise<boolean> {
   const supabase = await createClient()
-  
+
   const { count, error } = await supabase
     .from('t_kpi_assessments')
     .select('*', { count: 'exact', head: true })
     .eq('period', period)
-  
+
   if (error) throw error
-  
+
   return (count || 0) > 0
 }
 
@@ -268,7 +292,7 @@ export async function hasAssessmentData(period: string): Promise<boolean> {
  */
 export async function getDataSourceSummary(period: string) {
   const supabase = await createClient()
-  
+
   // Get all active employees
   const { data: employees, error: empError } = await supabase
     .from('m_employees')
@@ -281,11 +305,11 @@ export async function getDataSourceSummary(period: string) {
       )
     `)
     .eq('is_active', true)
-  
+
   if (empError) throw empError
-  
+
   const summary = []
-  
+
   for (const employee of employees!) {
     // Check assessment data
     const { count: assessmentCount } = await supabase
@@ -293,14 +317,14 @@ export async function getDataSourceSummary(period: string) {
       .select('*', { count: 'exact', head: true })
       .eq('employee_id', employee.id)
       .eq('period', period)
-    
+
     // Check realization data
     const { count: realizationCount } = await supabase
       .from('t_realization')
       .select('*', { count: 'exact', head: true })
       .eq('employee_id', employee.id)
       .eq('period', period)
-    
+
     summary.push({
       employee_id: employee.id,
       full_name: employee.full_name,
@@ -312,7 +336,7 @@ export async function getDataSourceSummary(period: string) {
       has_mixed_data: (assessmentCount || 0) > 0 && (realizationCount || 0) > 0,
     })
   }
-  
+
   return summary
 }
 
@@ -322,37 +346,37 @@ export async function getDataSourceSummary(period: string) {
  */
 export async function calculateFinalDistribution(period: string) {
   const supabase = await createClient()
-  
+
   // Get pool for this period
   const { data: pool, error: poolError } = await supabase
     .from('t_pool')
     .select('*')
     .eq('period', period)
     .single()
-  
+
   if (poolError) throw poolError
   if (!pool) throw new Error('Pool not found for this period')
   if (pool.allocated_amount === null || pool.allocated_amount === undefined) {
     throw new Error('Pool allocated amount is not calculated. Please ensure pool has revenue and deduction data.')
   }
-  
+
   // Get all units with their proportions
   const { data: units, error: unitsError } = await supabase
     .from('m_units')
     .select('id, proportion_percentage')
     .eq('is_active', true)
-  
+
   if (unitsError) throw unitsError
-  
+
   const results = []
-  
+
   for (const unit of units!) {
     // Calculate unit allocation
     const unitAllocation = calculateUnitAllocation(
       pool.allocated_amount,
       unit.proportion_percentage
     )
-    
+
     // Update unit score with allocated amount
     await supabase
       .from('t_unit_scores')
@@ -361,7 +385,7 @@ export async function calculateFinalDistribution(period: string) {
       })
       .eq('unit_id', unit.id)
       .eq('period', period)
-    
+
     // Get all employees in this unit with their scores
     const { data: employees, error: empError } = await supabase
       .from('m_employees')
@@ -369,37 +393,50 @@ export async function calculateFinalDistribution(period: string) {
         id,
         tax_status,
         t_individual_scores!inner (
-          individual_total_score
+          individual_total_score,
+          activity_rupiah
         )
       `)
       .eq('unit_id', unit.id)
       .eq('is_active', true)
       .eq('t_individual_scores.period', period)
-    
+
     if (empError) throw empError
-    
-    // Calculate total unit scores
+
+    // Calculate total unit activity-based rupiah
+    const totalUnitActivityRupiah = employees!.reduce((sum, emp: any) => {
+      return sum + (Number(emp.t_individual_scores[0].activity_rupiah) || 0)
+    }, 0)
+
+    // Calculate total unit scores (for distributing the remainder)
     const totalUnitScores = employees!.reduce((sum, emp: any) => {
       return sum + emp.t_individual_scores[0].individual_total_score
     }, 0)
-    
+
+    // Calculate remaining unit allocation for index-based distribution
+    const remainingUnitAllocation = unitAllocation.minus(totalUnitActivityRupiah)
+
     // Distribute to each employee
     for (const employee of employees!) {
       const empScore = (employee as any).t_individual_scores[0].individual_total_score
-      
-      // Calculate individual incentive
-      const { proportion, grossIncentive } = calculateIndividualIncentive(
-        toNumber(unitAllocation),
+      const empActivityRupiah = (employee as any).t_individual_scores[0].activity_rupiah || 0
+
+      // Calculate index-based portion of incentive
+      const { proportion, grossIncentive: indexIncentive } = calculateIndividualIncentive(
+        toNumber(remainingUnitAllocation),
         empScore,
         totalUnitScores
       )
-      
+
+      // Total gross is activity-based + index-based
+      const totalGrossIncentive = indexIncentive.plus(empActivityRupiah)
+
       // Calculate tax and net incentive
       const incentiveDistribution = calculateNetIncentive(
-        toNumber(grossIncentive),
+        toNumber(totalGrossIncentive),
         employee.tax_status
       )
-      
+
       // Save to t_calculation_results with 2 decimal places for monetary amounts
       const { error: calcError } = await supabase
         .from('t_calculation_results')
@@ -412,20 +449,24 @@ export async function calculateFinalDistribution(period: string) {
           final_score: empScore,
           unit_allocated_amount: toNumber(unitAllocation),
           score_proportion: toNumber(proportion),
+          activity_based_incentive: toNumber(new Decimal(empActivityRupiah)),
+          index_based_incentive: toNumber(indexIncentive),
           gross_incentive: toNumber(incentiveDistribution.grossIncentive),
           tax_amount: toNumber(incentiveDistribution.taxAmount),
           net_incentive: toNumber(incentiveDistribution.netIncentive),
           calculation_metadata: {
             unit_id: unit.id,
             total_unit_scores: totalUnitScores,
+            total_unit_activity_rupiah: totalUnitActivityRupiah,
+            remaining_unit_allocation: toNumber(remainingUnitAllocation),
             calculated_at: new Date().toISOString(),
           },
         }, {
           onConflict: 'employee_id,period'
         })
-      
+
       if (calcError) throw calcError
-      
+
       results.push({
         employee_id: employee.id,
         gross_incentive: toNumber(incentiveDistribution.grossIncentive),
@@ -434,7 +475,7 @@ export async function calculateFinalDistribution(period: string) {
       })
     }
   }
-  
+
   return results
 }
 
@@ -445,7 +486,7 @@ export async function calculateFinalDistribution(period: string) {
 export async function runFullCalculation(period: string) {
   const startTime = new Date()
   const supabase = await createClient()
-  
+
   try {
     // Step 1: Validate prerequisites
     const validation = await validateCalculationPrerequisites(period)
@@ -458,29 +499,29 @@ export async function runFullCalculation(period: string) {
         start_time: startTime,
         end_time: new Date(),
       })
-      
+
       return {
         success: false,
         message: 'Validation failed',
         errors: validation.errors,
       }
     }
-    
+
     // Get employee count for logging
     const { count: employeeCount } = await supabase
       .from('m_employees')
       .select('*', { count: 'exact', head: true })
       .eq('is_active', true)
-    
+
     // Step 2: Calculate individual scores (P1, P2, P3)
     await calculateIndividualScores(period)
-    
+
     // Step 3: Calculate and store unit scores
     await calculateAndStoreUnitScores(period)
-    
+
     // Step 4: Calculate final distribution
     await calculateFinalDistribution(period)
-    
+
     // Log success
     await logCalculation({
       period,
@@ -489,7 +530,7 @@ export async function runFullCalculation(period: string) {
       start_time: startTime,
       end_time: new Date(),
     })
-    
+
     return {
       success: true,
       message: 'Calculation completed successfully',
@@ -497,7 +538,7 @@ export async function runFullCalculation(period: string) {
     }
   } catch (error: any) {
     console.error('Calculation error:', error)
-    
+
     // Log error
     await logCalculation({
       period,
@@ -507,7 +548,7 @@ export async function runFullCalculation(period: string) {
       start_time: startTime,
       end_time: new Date(),
     })
-    
+
     return {
       success: false,
       message: 'Calculation failed: ' + (error as Error).message,
@@ -522,7 +563,7 @@ export async function runFullCalculation(period: string) {
 async function validateCalculationPrerequisites(period: string): Promise<CalculationPrerequisites> {
   const supabase = await createClient()
   const errors: ValidationError[] = []
-  
+
   // 1. Check if pool exists and is approved
   const { data: pool, error: poolError } = await supabase
     .from('t_pool')
@@ -530,20 +571,20 @@ async function validateCalculationPrerequisites(period: string): Promise<Calcula
     .eq('period', period)
     .eq('status', 'approved')
     .single()
-  
+
   if (poolError || !pool) {
     errors.push({
       type: 'pool_not_approved',
       message: `Pool for period ${period} is not approved or does not exist`,
     })
   }
-  
+
   // 2. Check if all active employees have assessment or realization data
   const { data: employees } = await supabase
     .from('m_employees')
     .select('id, full_name, unit_id')
     .eq('is_active', true)
-  
+
   if (employees) {
     for (const employee of employees) {
       // Get required indicators for this employee's unit
@@ -552,7 +593,7 @@ async function validateCalculationPrerequisites(period: string): Promise<Calcula
         .select('id, name, category_id, m_kpi_categories!inner(unit_id)')
         .eq('is_active', true)
         .eq('m_kpi_categories.unit_id', employee.unit_id)
-      
+
       if (indicators) {
         for (const indicator of indicators) {
           // Check assessment data first
@@ -563,7 +604,7 @@ async function validateCalculationPrerequisites(period: string): Promise<Calcula
             .eq('indicator_id', indicator.id)
             .eq('period', period)
             .single()
-          
+
           // If no assessment, check realization data
           if (!assessment) {
             const { data: realization } = await supabase
@@ -573,7 +614,7 @@ async function validateCalculationPrerequisites(period: string): Promise<Calcula
               .eq('indicator_id', indicator.id)
               .eq('period', period)
               .single()
-            
+
             if (!realization) {
               errors.push({
                 type: 'missing_data',
@@ -586,13 +627,13 @@ async function validateCalculationPrerequisites(period: string): Promise<Calcula
       }
     }
   }
-  
+
   // 3. Validate category weights sum to 100% per unit
   const { data: units } = await supabase
     .from('m_units')
     .select('id, name')
     .eq('is_active', true)
-  
+
   if (units) {
     for (const unit of units) {
       const { data: categories } = await supabase
@@ -600,11 +641,11 @@ async function validateCalculationPrerequisites(period: string): Promise<Calcula
         .select('weight_percentage')
         .eq('unit_id', unit.id)
         .eq('is_active', true)
-      
+
       if (categories) {
         const totalWeight = categories.reduce((sum, cat) => sum + cat.weight_percentage, 0)
         const tolerance = 0.01
-        
+
         if (Math.abs(totalWeight - 100) > tolerance) {
           errors.push({
             type: 'invalid_category_weights',
@@ -615,13 +656,13 @@ async function validateCalculationPrerequisites(period: string): Promise<Calcula
       }
     }
   }
-  
+
   // 4. Validate indicator weights sum to 100% per category
   const { data: categories } = await supabase
     .from('m_kpi_categories')
     .select('id, category_name, unit_id')
     .eq('is_active', true)
-  
+
   if (categories) {
     for (const category of categories) {
       const { data: indicators } = await supabase
@@ -629,11 +670,11 @@ async function validateCalculationPrerequisites(period: string): Promise<Calcula
         .select('weight_percentage')
         .eq('category_id', category.id)
         .eq('is_active', true)
-      
+
       if (indicators) {
         const totalWeight = indicators.reduce((sum, ind) => sum + ind.weight_percentage, 0)
         const tolerance = 0.01
-        
+
         if (Math.abs(totalWeight - 100) > tolerance) {
           errors.push({
             type: 'invalid_indicator_weights',
@@ -644,18 +685,18 @@ async function validateCalculationPrerequisites(period: string): Promise<Calcula
       }
     }
   }
-  
+
   // 5. Validate unit proportions sum to 100%
   if (units) {
     const { data: allUnits } = await supabase
       .from('m_units')
       .select('proportion_percentage')
       .eq('is_active', true)
-    
+
     if (allUnits) {
       const totalProportion = allUnits.reduce((sum, unit) => sum + unit.proportion_percentage, 0)
       const tolerance = 0.01
-      
+
       if (Math.abs(totalProportion - 100) > tolerance) {
         errors.push({
           type: 'invalid_unit_proportions',
@@ -665,7 +706,7 @@ async function validateCalculationPrerequisites(period: string): Promise<Calcula
       }
     }
   }
-  
+
   return {
     valid: errors.length === 0,
     errors,
@@ -686,7 +727,7 @@ async function logCalculation(data: {
   end_time: Date
 }) {
   const supabase = await createClient()
-  
+
   await supabase.from('t_calculation_log').insert({
     period: data.period,
     status: data.status,
@@ -704,14 +745,14 @@ async function logCalculation(data: {
  */
 async function calculateAndStoreUnitScores(period: string) {
   const supabase = await createClient()
-  
+
   const { data: units } = await supabase
     .from('m_units')
     .select('id, proportion_percentage')
     .eq('is_active', true)
-  
+
   if (!units) return
-  
+
   for (const unit of units) {
     // Get all employees in this unit
     const { data: employees } = await supabase
@@ -725,14 +766,14 @@ async function calculateAndStoreUnitScores(period: string) {
       .eq('unit_id', unit.id)
       .eq('is_active', true)
       .eq('t_individual_scores.period', period)
-    
+
     if (!employees || employees.length === 0) continue
-    
+
     // Sum all individual scores
     const totalScore = employees.reduce((sum, emp: any) => {
       return sum + (emp.t_individual_scores[0]?.individual_total_score || 0)
     }, 0)
-    
+
     // Store unit score
     await supabase
       .from('t_unit_scores')

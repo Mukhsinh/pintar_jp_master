@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { usePathname } from 'next/navigation'
-import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { OptimizedLink } from '@/components/ui/optimized-link'
 import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard,
@@ -285,7 +285,7 @@ export default function Sidebar() {
           const isNotif = item.id === 'notifications'
 
           return (
-            <Link
+            <OptimizedLink
               key={item.id}
               href={item.path}
               onClick={() => setIsMobileOpen(false)}
@@ -310,7 +310,7 @@ export default function Sidebar() {
                   {item.label}
                 </span>
               )}
-            </Link>
+            </OptimizedLink>
           )
         })}
       </nav>

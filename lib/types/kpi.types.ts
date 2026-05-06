@@ -8,6 +8,7 @@ export interface KPICategory {
   weight_percentage: number
   description: string | null
   is_active: boolean
+  configuration_style?: 'percentage' | 'activity' | null
 }
 
 export interface KPIIndicator {
@@ -20,6 +21,7 @@ export interface KPIIndicator {
   measurement_unit: string | null
   description: string | null
   is_active: boolean
+  basic_index_value?: number | null
 }
 
 // Scoring criterion interface

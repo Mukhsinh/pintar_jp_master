@@ -156,7 +156,8 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
       m_units (
         id,
         name,
-        proportion_percentage
+        proportion_percentage,
+        remuneration_style
       )
     `)
     .eq('is_active', true)
@@ -251,18 +252,33 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
     const uId = unitData?.id
     if (!uId || unitPIRMap.has(uId)) continue
 
+    // Determine Style
+    const style = unitData?.remuneration_style || 'score_based'
     const unitProp = parseFloat(unitData?.proportion_percentage || '0')
     const unitName = unitData?.name || '-'
     const totalSkorUnit = unitTotalScoresMap.get(uId) || 0
     const empCount = unitEmployeeCountMap.get(uId) || 0
-
-    // PIR = (net_pool × proportion%) / Total Skor Kolektif Unit
     const allocatedForUnit = netPool * (unitProp / 100)
-    const pir = totalSkorUnit > 0 ? allocatedForUnit / totalSkorUnit : 0
+
+    let pir = 0
+    if (style === 'activity_based_pir') {
+      // MEDIS Style PIR Calculation: (Allocated - Aggregate Guarantee Fees) / Total Activity Index Points
+      const { data: masterDocs } = await supabase
+        .from('remunerasi_master_dokter')
+        .select('pagu_guarantee_fee')
+      // Ideally we filter by employees in this unit
+
+      const totalGuaranteeFee = masterDocs?.reduce((acc: number, d: any) => acc + Number(d.pagu_guarantee_fee), 0) || 0
+      const sisaPaguMedis = allocatedForUnit - totalGuaranteeFee
+      pir = totalSkorUnit > 0 ? sisaPaguMedis / totalSkorUnit : 0
+    } else {
+      // Standard PIR: allocated / Total Skor
+      pir = totalSkorUnit > 0 ? allocatedForUnit / totalSkorUnit : 0
+    }
 
     unitPIRMap.set(uId, pir)
 
-    // Save audit trail
+    // Save audit trail (using original field names)
     await savePIRHistory(
       supabase, period, uId, unitName,
       netPool, unitProp, allocatedForUnit,
@@ -297,8 +313,22 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
     const pir = uId ? (unitPIRMap.get(uId) || 0) : 0
     const totalSkorUnit = uId ? (unitTotalScoresMap.get(uId) || 0) : 0
 
-    // Insentif Bruto = Total Skor Individu × PIR
-    const grossIncentive = totalScore * pir
+    // Insentif Bruto calculation logic
+    const style = unitData?.remuneration_style || 'score_based'
+    let grossIncentive = totalScore * pir
+
+    if (style === 'activity_based_pir') {
+      // For doctors, add Guarantee Fee (Guarantee Fee + Indexed Score Portion)
+      const { data: doctorMaster } = await supabase
+        .from('remunerasi_master_dokter')
+        .select('pagu_guarantee_fee')
+        .eq('employee_id', empId)
+        .eq('periode_id', period)
+        .maybeSingle()
+
+      const guaranteeFee = Number(doctorMaster?.pagu_guarantee_fee || 0)
+      grossIncentive += guaranteeFee
+    }
 
     // PPh 21
     const taxAmount = calculatePPh21(grossIncentive, emp.employee_status, emp.tax_type)

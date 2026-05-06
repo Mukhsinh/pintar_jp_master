@@ -40,7 +40,8 @@ export default function IndicatorFormDialog({
     target_value: '100.00',
     weight_percentage: '',
     measurement_unit: '',
-    description: ''
+    description: '',
+    basic_index_value: '0.0000'
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
@@ -52,7 +53,8 @@ export default function IndicatorFormDialog({
         target_value: indicator.target_value.toString(),
         weight_percentage: indicator.weight_percentage.toString(),
         measurement_unit: indicator.measurement_unit || '',
-        description: indicator.description || ''
+        description: indicator.description || '',
+        basic_index_value: indicator.basic_index_value?.toString() || '0.0000'
       })
     } else {
       setFormData({
@@ -61,7 +63,8 @@ export default function IndicatorFormDialog({
         target_value: '100.00',
         weight_percentage: '',
         measurement_unit: '',
-        description: ''
+        description: '',
+        basic_index_value: '0.0000'
       })
     }
     setErrors({})
@@ -103,7 +106,9 @@ export default function IndicatorFormDialog({
     }
 
     if (!formData.target_value) {
-      newErrors.target_value = 'Nilai target wajib diisi'
+      newErrors.target_value = category?.configuration_style === 'activity'
+        ? 'Target Volume wajib diisi'
+        : 'Nilai target wajib diisi'
     } else {
       const target = parseFloat(formData.target_value)
       if (isNaN(target) || target <= 0) {
@@ -112,7 +117,9 @@ export default function IndicatorFormDialog({
     }
 
     if (!formData.weight_percentage) {
-      newErrors.weight_percentage = 'Persentase bobot wajib diisi'
+      newErrors.weight_percentage = category?.configuration_style === 'activity'
+        ? 'Poin Indeks wajib diisi'
+        : 'Persentase bobot wajib diisi'
     } else {
       const weight = parseFloat(formData.weight_percentage)
       if (isNaN(weight) || weight <= 0) {
@@ -125,6 +132,17 @@ export default function IndicatorFormDialog({
 
         if (totalWeight > 100.01) { // Allow small floating point tolerance
           newErrors.weight_percentage = `Total bobot akan menjadi ${totalWeight.toFixed(2)}% (maksimal 100%)`
+        }
+      }
+    }
+
+    if (category?.configuration_style === 'activity') {
+      if (!formData.basic_index_value) {
+        newErrors.basic_index_value = 'Nilai Dasar Indeks wajib diisi'
+      } else {
+        const iv = parseFloat(formData.basic_index_value)
+        if (isNaN(iv) || iv <= 0) {
+          newErrors.basic_index_value = 'Nilai Dasar Indeks harus lebih besar dari 0'
         }
       }
     }
@@ -150,7 +168,8 @@ export default function IndicatorFormDialog({
         weight_percentage: parseFloat(formData.weight_percentage),
         measurement_unit: formData.measurement_unit.trim() || null,
         description: formData.description.trim() || null,
-        is_active: true
+        is_active: true,
+        basic_index_value: category?.configuration_style === 'activity' ? parseFloat(formData.basic_index_value) : null
       }
 
       if (indicator) {
@@ -227,7 +246,9 @@ export default function IndicatorFormDialog({
 
             {/* Target Value */}
             <div className="space-y-2">
-              <Label htmlFor="target_value">Nilai Target *</Label>
+              <Label htmlFor="target_value">
+                {category?.configuration_style === 'activity' ? 'Target Volume *' : 'Nilai Target *'}
+              </Label>
               <Input
                 id="target_value"
                 type="number"
@@ -235,19 +256,23 @@ export default function IndicatorFormDialog({
                 min="0"
                 value={formData.target_value}
                 onChange={(e) => setFormData({ ...formData, target_value: e.target.value })}
-                placeholder="contoh: 100.00"
+                placeholder={category?.configuration_style === 'activity' ? "contoh: 1500" : "contoh: 100.00"}
               />
               {errors.target_value && (
                 <p className="text-sm text-red-600">{errors.target_value}</p>
               )}
               <p className="text-xs text-gray-500">
-                Nilai target default untuk indikator ini
+                {category?.configuration_style === 'activity'
+                  ? 'Target volume aktivitas bulanan untuk indikator ini'
+                  : 'Nilai target default untuk indikator ini'}
               </p>
             </div>
 
             {/* Weight Percentage */}
             <div className="space-y-2">
-              <Label htmlFor="weight_percentage">Persentase Bobot (%) *</Label>
+              <Label htmlFor="weight_percentage">
+                {category?.configuration_style === 'activity' ? 'Poin Indeks (%) *' : 'Persentase Bobot (%) *'}
+              </Label>
               <Input
                 id="weight_percentage"
                 type="number"
@@ -273,6 +298,28 @@ export default function IndicatorFormDialog({
                 Total semua bobot indikator dalam kategori ini harus sama dengan 100%. Bobot individual bisa kurang dari 100%.
               </p>
             </div>
+
+            {/* Basic Index Value (Only for Activity Style) */}
+            {category?.configuration_style === 'activity' && (
+              <div className="space-y-2">
+                <Label htmlFor="basic_index_value">Nilai Dasar Indeks *</Label>
+                <Input
+                  id="basic_index_value"
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  value={formData.basic_index_value}
+                  onChange={(e) => setFormData({ ...formData, basic_index_value: e.target.value })}
+                  placeholder="contoh: 0.1250"
+                />
+                {errors.basic_index_value && (
+                  <p className="text-sm text-red-600">{errors.basic_index_value}</p>
+                )}
+                <p className="text-xs text-gray-500">
+                  Nilai dasar (basic index) per satuan aktivitas. Gunakan desimal hingga 4 angka (contoh: 0.1250).
+                </p>
+              </div>
+            )}
 
             {/* Measurement Unit */}
             <div className="space-y-2">

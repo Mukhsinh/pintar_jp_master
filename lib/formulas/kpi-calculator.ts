@@ -23,6 +23,7 @@ export interface IndividualScores {
   p2Weighted: Decimal;
   p3Weighted: Decimal;
   totalIndividualScore: Decimal;
+  activityRupiah: Decimal;
 }
 
 /**
@@ -53,22 +54,23 @@ export function calculateIndividualScore(
   p1Score: number,
   p2Score: number,
   p3Score: number,
-  weights: { p1: number; p2: number; p3: number }
+  weights: { p1: number; p2: number; p3: number },
+  activityRupiah: number = 0
 ): IndividualScores {
   const p1 = new Decimal(p1Score);
   const p2 = new Decimal(p2Score);
   const p3 = new Decimal(p3Score);
-  
+
   const w1 = new Decimal(weights.p1).div(100);
   const w2 = new Decimal(weights.p2).div(100);
   const w3 = new Decimal(weights.p3).div(100);
-  
+
   const p1Weighted = p1.mul(w1);
   const p2Weighted = p2.mul(w2);
   const p3Weighted = p3.mul(w3);
-  
+
   const totalIndividualScore = p1Weighted.plus(p2Weighted).plus(p3Weighted);
-  
+
   return {
     p1Score: p1,
     p2Score: p2,
@@ -77,6 +79,7 @@ export function calculateIndividualScore(
     p2Weighted,
     p3Weighted,
     totalIndividualScore,
+    activityRupiah: new Decimal(activityRupiah),
   };
 }
 
@@ -94,12 +97,12 @@ export function calculateFinalScore(
   const iScore = new Decimal(individualScore);
   const uWeight = new Decimal(unitWeight).div(100);
   const iWeight = new Decimal(individualWeight).div(100);
-  
+
   const weightedUnitScore = uScore.mul(uWeight);
   const weightedIndividualScore = iScore.mul(iWeight);
-  
+
   const finalScore = weightedUnitScore.plus(weightedIndividualScore);
-  
+
   return {
     unitScore: uScore,
     individualScore: iScore,
@@ -122,10 +125,10 @@ export function calculatePoolAllocation(
   const rev = new Decimal(revenue);
   const ded = new Decimal(deductions);
   const globalAlloc = new Decimal(globalAllocationPercentage).div(100);
-  
+
   const netPool = rev.minus(ded);
   const allocatedAmount = netPool.mul(globalAlloc);
-  
+
   return {
     netPool,
     allocatedAmount,
@@ -142,7 +145,7 @@ export function calculateUnitAllocation(
 ): Decimal {
   const allocated = new Decimal(allocatedAmount);
   const proportion = new Decimal(unitProportionPercentage).div(100);
-  
+
   return allocated.mul(proportion);
 }
 
@@ -159,17 +162,17 @@ export function calculateIndividualIncentive(
   const unitAlloc = new Decimal(unitAllocation);
   const empScore = new Decimal(employeeFinalScore);
   const totalScore = new Decimal(totalUnitScores);
-  
+
   if (totalScore.isZero()) {
     return {
       proportion: new Decimal(0),
       grossIncentive: new Decimal(0),
     };
   }
-  
+
   const proportion = empScore.div(totalScore);
   const grossIncentive = unitAlloc.mul(proportion);
-  
+
   return {
     proportion,
     grossIncentive,
@@ -185,7 +188,7 @@ export function calculatePPh21TER(
   taxStatus: string = 'TK/0'
 ): Decimal {
   const gross = new Decimal(grossIncome);
-  
+
   // TER rates based on tax status (simplified version)
   // In production, use official TER table from DJP
   const terRates: Record<string, number> = {
@@ -198,10 +201,10 @@ export function calculatePPh21TER(
     'K/2': 3.5,   // 3.5%
     'K/3': 3,     // 3%
   };
-  
+
   const rate = terRates[taxStatus] || 5;
   const taxRate = new Decimal(rate).div(100);
-  
+
   return gross.mul(taxRate);
 }
 
@@ -216,7 +219,7 @@ export function calculateNetIncentive(
   const gross = new Decimal(grossIncentive);
   const tax = calculatePPh21TER(grossIncentive, taxStatus);
   const net = gross.minus(tax);
-  
+
   return {
     grossIncentive: gross,
     taxAmount: tax,
@@ -233,10 +236,10 @@ export function calculateAchievementPercentage(
   target: number
 ): Decimal {
   if (target === 0) return new Decimal(0);
-  
+
   const real = new Decimal(realization);
   const tgt = new Decimal(target);
-  
+
   return real.div(tgt).mul(100);
 }
 
@@ -250,8 +253,22 @@ export function calculateWeightedIndicatorScore(
 ): Decimal {
   const achievement = new Decimal(achievementPercentage).div(100);
   const weight = new Decimal(weightPercentage).div(100);
-  
+
   return achievement.mul(weight).mul(100);
+}
+
+/**
+ * Calculate direct rupiah from activity saturation
+ * Formula: Activity Rupiah = Realization × Basic Index Value
+ */
+export function calculateActivityRupiah(
+  realization: number,
+  basicIndexValue: number
+): Decimal {
+  const real = new Decimal(realization);
+  const biv = new Decimal(basicIndexValue);
+
+  return real.mul(biv);
 }
 
 /**

@@ -49,11 +49,14 @@ class LRUCache<T> {
   }
 }
 
-// Optimized cache instance
+// Optimized cache instance with enhanced settings
+const CACHE_TTL = 15 * 60 * 1000 // 15 minutes TTL (increased from 5 minutes)
+const MAX_CACHE_SIZE = 1000 // Increased cache size
+
 const employeeCache = new LRUCache<{
   role: Role
   is_active: boolean
-}>(500, 5 * 60 * 1000) // 5 minutes TTL
+}>(MAX_CACHE_SIZE, CACHE_TTL)
 
 // Background cleanup (runs less frequently)
 let lastCleanup = 0
