@@ -21,6 +21,7 @@ import { toast } from 'sonner'
 import { Progress } from '@/components/ui/progress'
 import type { AssessmentStatus } from '@/lib/types/assessment.types'
 import type { ScoringCriterion } from '@/lib/types/kpi.types'
+import { isMedicalUnit as checkMedicalUnit } from '@/lib/utils/medical-unit'
 
 interface KPISubIndicator {
   id: string
@@ -100,6 +101,8 @@ export default function AssessmentFormDialog({
   const [copyingPrevious, setCopyingPrevious] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const isMedicalUnit = checkMedicalUnit(employee?.unit_id, employee?.unit_name)
+
   // Load KPI indicators and existing assessments
   useEffect(() => {
     if (open && employee) {
@@ -127,13 +130,14 @@ export default function AssessmentFormDialog({
     if (sub.scoring_criteria && sub.scoring_criteria.length > 0) {
       return Math.max(...sub.scoring_criteria.map(c => c.score))
     }
-    return sub.target_value > 0 ? sub.target_value : 100
+    return sub.target_value > 0 ? sub.target_value : (isMedicalUnit ? 0 : 100)
   }
 
   const getIndicatorTarget = (indicator: KPIIndicator) => {
     if (indicator.sub_indicators && indicator.sub_indicators.length > 0) {
       return indicator.sub_indicators.reduce((sum, sub) => {
-        return sum + (getSubIndicatorMaxScore(sub) * (sub.weight_percentage / 100))
+        const weight = isMedicalUnit ? 1 : (sub.weight_percentage / 100)
+        return sum + (getSubIndicatorMaxScore(sub) * weight)
       }, 0)
     }
     return indicator.target_value
@@ -224,14 +228,14 @@ export default function AssessmentFormDialog({
         let sumRealisasi = 0
         subAssessments.forEach(sub => {
           const subConfig = indicator.sub_indicators.find(s => s.id === sub.sub_indicator_id)
-          const weight = subConfig ? (subConfig.weight_percentage / 100) : 0
+          const weight = isMedicalUnit ? 1 : (subConfig ? (subConfig.weight_percentage / 100) : 0)
           sumRealisasi += (sub.score || 0) * weight
         })
 
         const maxTarget = getIndicatorTarget(indicator)
 
         derivedRealizationValue = sumRealisasi
-        totalAchievement = maxTarget > 0 ? (sumRealisasi / maxTarget) * 100 : 0
+        totalAchievement = maxTarget > 0 ? (sumRealisasi / maxTarget) * 100 : (isMedicalUnit && sumRealisasi > 0 ? 100 : 0)
       } else {
         totalAchievement = current.achievement_percentage
         derivedRealizationValue = current.realization_value
@@ -291,6 +295,7 @@ export default function AssessmentFormDialog({
               target_value: getIndicatorTarget(indicator),
               weight_percentage: indicator.weight_percentage,
               achievement_percentage: assessment.achievement_percentage,
+              score: assessment.score,
               notes: assessment.notes,
               sub_assessments: assessment.sub_assessments
             })
@@ -421,7 +426,7 @@ export default function AssessmentFormDialog({
 
               category.indicators.forEach(indicator => {
                 const assessment = assessments[indicator.id]
-                const indWeight = parseFloat(indicator.weight_percentage.toString()) || 0
+                const indWeight = isMedicalUnit ? 100 : (parseFloat(indicator.weight_percentage.toString()) || 0)
 
                 // Bottom-up Indicator to Category
                 const indTarget = getIndicatorTarget(indicator)
@@ -433,7 +438,9 @@ export default function AssessmentFormDialog({
 
               const porsiKategori = category.weight_percentage
               let kontribusiAkhir = 0
-              if (totalTargetKategori > 0) {
+              if (isMedicalUnit) {
+                kontribusiAkhir = totalRealisasiKategori // For medical, raw sum is used or logic differs
+              } else if (totalTargetKategori > 0) {
                 kontribusiAkhir = (totalRealisasiKategori / totalTargetKategori) * porsiKategori
               }
 
@@ -444,7 +451,7 @@ export default function AssessmentFormDialog({
                       Total {catCode} ({porsiKategori}%)
                     </CardTitle>
                     <Badge variant="secondary" className="text-[10px] font-medium px-2 py-0 border-blue-200 bg-blue-50 text-blue-700">
-                      Poin Akhir: {kontribusiAkhir.toFixed(2)}
+                      Poin Akhir: {isMedicalUnit ? totalRealisasiKategori.toFixed(2) : kontribusiAkhir.toFixed(2)}
                     </Badge>
                   </CardHeader>
                   <CardContent className="py-0 px-4 pb-3">
@@ -488,9 +495,11 @@ export default function AssessmentFormDialog({
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
                     <span>{category.category} - {category.category_name}</span>
-                    <Badge variant="outline">
-                      Bobot: {category.weight_percentage}%
-                    </Badge>
+                    {!isMedicalUnit && (
+                      <Badge variant="outline">
+                        Bobot: {category.weight_percentage}%
+                      </Badge>
+                    )}
                   </CardTitle>
                   <CardDescription>
                     {category.indicators.length} indikator dalam kategori ini
@@ -515,9 +524,11 @@ export default function AssessmentFormDialog({
                                 <p className="text-sm text-gray-500 mt-1">{indicator.description}</p>
                               )}
                             </div>
-                            <Badge variant="outline" className="ml-4">
-                              Bobot: {indicator.weight_percentage}%
-                            </Badge>
+                            {!isMedicalUnit && (
+                              <Badge variant="outline" className="ml-4">
+                                Bobot: {indicator.weight_percentage}%
+                              </Badge>
+                            )}
                           </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -589,7 +600,7 @@ export default function AssessmentFormDialog({
                                         <div>
                                           <p className="text-sm font-medium text-gray-800">{sub.name}</p>
                                           <p className="text-xs text-gray-500">
-                                            Bobot: {sub.weight_percentage}%
+                                            {!isMedicalUnit && `Bobot: ${sub.weight_percentage}%`}
                                             {sub.target_value > 0 && ` • Target: ${sub.target_value}`}
                                             {isQuantitative && sub.measurement_unit && ` • Satuan: ${sub.measurement_unit}`}
                                           </p>

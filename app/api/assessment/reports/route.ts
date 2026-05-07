@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { isMedicalUnit } from '@/lib/utils/medical-unit'
+import { calculateCategoryScore, calculateTotalScore } from '@/lib/utils/score-calculator'
 
 export async function GET(request: NextRequest) {
   try {
@@ -242,20 +244,22 @@ async function getAssessmentReport(supabase: any, user: any, period: string, uni
     const employeeId = assessment.employee_id
     const indicatorName = assessment.m_kpi_indicators.name
 
-    // Collect category scores
-    if (categoryScores[category]) {
-      categoryScores[category].push(score)
-    }
-
     // Collect employee total scores
     if (!employeeScores.has(employeeId)) {
       employeeScores.set(employeeId, {
         employee_name: assessment.m_employees.full_name,
         unit_name: assessment.m_employees.m_units.name,
-        scores: []
+        scores: [],
+        p1_scores: [],
+        p2_scores: [],
+        p3_scores: []
       })
     }
-    employeeScores.get(employeeId).scores.push(score)
+    const empData = employeeScores.get(employeeId)
+    empData.scores.push(score)
+    if (category === 'p1') empData.p1_scores.push(score)
+    else if (category === 'p2') empData.p2_scores.push(score)
+    else if (category === 'p3') empData.p3_scores.push(score)
 
     // Collect indicator achievements for improvement areas
     if (!indicatorAchievements.has(indicatorName)) {
@@ -268,27 +272,41 @@ async function getAssessmentReport(supabase: any, user: any, period: string, uni
     indicatorAchievements.get(indicatorName).achievements.push(achievement)
   })
 
-  // Calculate averages
-  const p1Average = categoryScores.p1.length > 0 ?
-    categoryScores.p1.reduce((a: number, b: number) => a + b, 0) / categoryScores.p1.length : 0
-  const p2Average = categoryScores.p2.length > 0 ?
-    categoryScores.p2.reduce((a: number, b: number) => a + b, 0) / categoryScores.p2.length : 0
-  const p3Average = categoryScores.p3.length > 0 ?
-    categoryScores.p3.reduce((a: number, b: number) => a + b, 0) / categoryScores.p3.length : 0
+  let reportP1Total = 0, reportP2Total = 0, reportP3Total = 0;
+  let reportOverallTotal = 0;
+  let empCount = 0;
 
-  const overallAverage = assessmentData && assessmentData.length > 0 ?
-    assessmentData.reduce((sum: number, a: any) => sum + (a.score || 0), 0) / assessmentData.length : 0
-
-  // Calculate top performers
+  // Calculate top performers and unit averages
   const topPerformers = Array.from(employeeScores.entries())
-    .map(([employeeId, data]: [string, any]) => ({
-      employee_id: employeeId,
-      employee_name: data.employee_name,
-      unit_name: data.unit_name,
-      total_score: data.scores.reduce((a: number, b: number) => a + b, 0) / data.scores.length
-    }))
+    .map(([employeeId, data]: [string, any]) => {
+      const isMedical = isMedicalUnit(null, data.unit_name);
+
+      const p1 = calculateCategoryScore(data.p1_scores, isMedical);
+      const p2 = calculateCategoryScore(data.p2_scores, isMedical);
+      const p3 = calculateCategoryScore(data.p3_scores, isMedical);
+
+      const total_score = calculateTotalScore(p1, p2, p3, isMedical);
+
+      reportP1Total += p1;
+      reportP2Total += p2;
+      reportP3Total += p3;
+      reportOverallTotal += total_score;
+      empCount++;
+
+      return {
+        employee_id: employeeId,
+        employee_name: data.employee_name,
+        unit_name: data.unit_name,
+        total_score
+      }
+    })
     .sort((a, b) => b.total_score - a.total_score)
     .slice(0, 10)
+
+  const p1Average = empCount > 0 ? reportP1Total / empCount : 0;
+  const p2Average = empCount > 0 ? reportP2Total / empCount : 0;
+  const p3Average = empCount > 0 ? reportP3Total / empCount : 0;
+  const overallAverage = empCount > 0 ? reportOverallTotal / empCount : 0;
 
   // Calculate improvement areas
   const improvementAreas = Array.from(indicatorAchievements.entries())

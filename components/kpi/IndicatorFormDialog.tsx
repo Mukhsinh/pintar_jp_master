@@ -22,6 +22,7 @@ interface IndicatorFormDialogProps {
   category: KPICategory | null
   existingIndicators: KPIIndicator[]
   onSuccess: () => void
+  isMedicalUnit?: boolean
 }
 
 export default function IndicatorFormDialog({
@@ -30,7 +31,8 @@ export default function IndicatorFormDialog({
   indicator,
   category,
   existingIndicators,
-  onSuccess
+  onSuccess,
+  isMedicalUnit = false
 }: IndicatorFormDialogProps) {
   const supabase = createClient()
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -116,11 +118,11 @@ export default function IndicatorFormDialog({
       }
     }
 
-    if (!formData.weight_percentage) {
+    if (!isMedicalUnit && !formData.weight_percentage) {
       newErrors.weight_percentage = category?.configuration_style === 'activity'
         ? 'Poin Indeks wajib diisi'
         : 'Persentase bobot wajib diisi'
-    } else {
+    } else if (!isMedicalUnit) {
       const weight = parseFloat(formData.weight_percentage)
       if (isNaN(weight) || weight <= 0) {
         newErrors.weight_percentage = 'Bobot harus lebih besar dari 0'
@@ -165,7 +167,7 @@ export default function IndicatorFormDialog({
         code: formData.code.trim(),
         name: formData.name.trim(),
         target_value: parseFloat(formData.target_value),
-        weight_percentage: parseFloat(formData.weight_percentage),
+        weight_percentage: isMedicalUnit ? 0 : parseFloat(formData.weight_percentage),
         measurement_unit: formData.measurement_unit.trim() || null,
         description: formData.description.trim() || null,
         is_active: true,
@@ -269,35 +271,37 @@ export default function IndicatorFormDialog({
             </div>
 
             {/* Weight Percentage */}
-            <div className="space-y-2">
-              <Label htmlFor="weight_percentage">
-                {category?.configuration_style === 'activity' ? 'Poin Indeks (%) *' : 'Persentase Bobot (%) *'}
-              </Label>
-              <Input
-                id="weight_percentage"
-                type="number"
-                step="0.01"
-                min="0.01"
-                max="100"
-                value={formData.weight_percentage}
-                onChange={(e) => setFormData({ ...formData, weight_percentage: e.target.value })}
-                placeholder="contoh: 25.00"
-              />
-              {errors.weight_percentage && (
-                <p className="text-sm text-red-600">{errors.weight_percentage}</p>
-              )}
-              {formData.weight_percentage && !errors.weight_percentage && (() => {
-                const weightInfo = getTotalWeightInfo()
-                return (
-                  <p className={`text-xs font-medium ${weightInfo.isValid ? 'text-green-600' : 'text-amber-600'}`}>
-                    {weightInfo.message}
-                  </p>
-                )
-              })()}
-              <p className="text-xs text-gray-500">
-                Total semua bobot indikator dalam kategori ini harus sama dengan 100%. Bobot individual bisa kurang dari 100%.
-              </p>
-            </div>
+            {!isMedicalUnit && (
+              <div className="space-y-2">
+                <Label htmlFor="weight_percentage">
+                  {category?.configuration_style === 'activity' ? 'Poin Indeks (%) *' : 'Persentase Bobot (%) *'}
+                </Label>
+                <Input
+                  id="weight_percentage"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max="100"
+                  value={formData.weight_percentage}
+                  onChange={(e) => setFormData({ ...formData, weight_percentage: e.target.value })}
+                  placeholder="contoh: 25.00"
+                />
+                {errors.weight_percentage && (
+                  <p className="text-sm text-red-600">{errors.weight_percentage}</p>
+                )}
+                {formData.weight_percentage && !errors.weight_percentage && (() => {
+                  const weightInfo = getTotalWeightInfo()
+                  return (
+                    <p className={`text-xs font-medium ${weightInfo.isValid ? 'text-green-600' : 'text-amber-600'}`}>
+                      {weightInfo.message}
+                    </p>
+                  )
+                })()}
+                <p className="text-xs text-gray-500">
+                  Total semua bobot indikator dalam kategori ini harus sama dengan 100%. Bobot individual bisa kurang dari 100%.
+                </p>
+              </div>
+            )}
 
             {/* Basic Index Value (Only for Activity Style) */}
             {category?.configuration_style === 'activity' && (

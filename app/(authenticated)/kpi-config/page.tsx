@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Plus, Copy, Download, Building2, FileSpreadsheet, FileText, ChevronDown } from 'lucide-react'
 import type {
@@ -12,6 +13,7 @@ import type {
   KPIIndicator,
   KPISubIndicator
 } from '@/lib/types/kpi.types'
+import { isMedicalUnit as checkMedicalUnit } from '@/lib/utils/medical-unit'
 
 // Direct imports instead of dynamic to fix chunk loading issues
 import KPITree from '@/components/kpi/KPITree'
@@ -52,7 +54,7 @@ export default function KPIConfigPage() {
   const [mounted, setMounted] = useState(false)
 
   const selectedUnitData = units.find(u => u.id === selectedUnit)
-  const isMedicalUnit = selectedUnitData?.name.toUpperCase().includes('MEDIS') || selectedUnitData?.code === 'UK01'
+  const isMedicalUnit = checkMedicalUnit(selectedUnitData?.id, selectedUnitData?.name)
 
   // Ensure component is mounted before loading data
   useEffect(() => {
@@ -418,6 +420,9 @@ export default function KPIConfigPage() {
                   <div className="flex items-center gap-3">
                     <span className="font-bold text-blue-600 bg-blue-100 px-2 py-1 rounded">{unit.code}</span>
                     <span className="text-gray-700">{unit.name}</span>
+                    {checkMedicalUnit(unit.id, unit.name) && (
+                      <Badge variant="secondary" className="text-[10px] bg-rose-50 text-rose-700 border-rose-200 px-1">Medis</Badge>
+                    )}
                   </div>
                 </SelectItem>
               ))}
@@ -478,6 +483,7 @@ export default function KPIConfigPage() {
         category={selectedCategory}
         existingIndicators={indicators.filter(i => i.category_id === selectedCategory?.id)}
         onSuccess={loadKPIStructure}
+        isMedicalUnit={isMedicalUnit}
       />
 
       <SubIndicatorFormDialog
@@ -487,6 +493,7 @@ export default function KPIConfigPage() {
         indicator={selectedIndicatorForSub}
         existingSubIndicators={subIndicators.filter(s => s.indicator_id === selectedIndicatorForSub?.id)}
         onSuccess={loadKPIStructure}
+        isMedicalUnit={isMedicalUnit}
       />
 
       <CopyStructureDialog

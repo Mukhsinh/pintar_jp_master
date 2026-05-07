@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import * as XLSX from 'xlsx'
+import { isMedicalUnit } from '@/lib/utils/medical-unit'
+import { calculateCategoryScore, calculateTotalScore } from '@/lib/utils/score-calculator'
 
 export async function GET(request: NextRequest) {
   try {
@@ -103,7 +105,7 @@ export async function GET(request: NextRequest) {
     }))
 
     const detailSheet = XLSX.utils.json_to_sheet(detailData)
-    
+
     // Set column widths
     const detailCols = [
       { wch: 10 }, // Periode
@@ -131,7 +133,7 @@ export async function GET(request: NextRequest) {
 
     // Sheet 2: Ringkasan per Pegawai
     const employeeSummary = new Map()
-    
+
     assessmentData.forEach((assessment: any) => {
       const employeeId = assessment.employee_id
       if (!employeeSummary.has(employeeId)) {
@@ -146,32 +148,31 @@ export async function GET(request: NextRequest) {
           assessed_indicators: 0
         })
       }
-      
+
       const employee = employeeSummary.get(employeeId)
       const category = assessment.m_kpi_indicators.m_kpi_categories.category.toLowerCase()
       const score = assessment.score || 0
-      
+
       employee.total_indicators++
       if (assessment.score !== null && assessment.score !== undefined) {
         employee.assessed_indicators++
       }
-      
+
       if (category === 'p1') employee.p1_scores.push(score)
       else if (category === 'p2') employee.p2_scores.push(score)
       else if (category === 'p3') employee.p3_scores.push(score)
     })
 
     const summaryData = Array.from(employeeSummary.values()).map((employee: any) => {
-      const p1Average = employee.p1_scores.length > 0 ? 
-        employee.p1_scores.reduce((a: number, b: number) => a + b, 0) / employee.p1_scores.length : 0
-      const p2Average = employee.p2_scores.length > 0 ? 
-        employee.p2_scores.reduce((a: number, b: number) => a + b, 0) / employee.p2_scores.length : 0
-      const p3Average = employee.p3_scores.length > 0 ? 
-        employee.p3_scores.reduce((a: number, b: number) => a + b, 0) / employee.p3_scores.length : 0
-      
-      const totalAverage = (p1Average + p2Average + p3Average) / 3
-      const completionRate = employee.total_indicators > 0 ? 
-        (employee.assessed_indicators / employee.total_indicators) * 100 : 0
+      const isMedical = isMedicalUnit(null, employee.unit);
+
+      const p1Average = calculateCategoryScore(employee.p1_scores, isMedical);
+      const p2Average = calculateCategoryScore(employee.p2_scores, isMedical);
+      const p3Average = calculateCategoryScore(employee.p3_scores, isMedical);
+      const totalAverage = calculateTotalScore(p1Average, p2Average, p3Average, isMedical);
+
+      const completionRate = employee.total_indicators > 0 ?
+        (employee.assessed_indicators / employee.total_indicators) * 100 : 0;
 
       return {
         'Unit': employee.unit,
@@ -189,7 +190,7 @@ export async function GET(request: NextRequest) {
     })
 
     const summarySheet = XLSX.utils.json_to_sheet(summaryData)
-    
+
     // Set column widths for summary
     const summaryCols = [
       { wch: 20 }, // Unit
@@ -211,7 +212,7 @@ export async function GET(request: NextRequest) {
     // Sheet 3: Ringkasan per Unit (if showing all units)
     if (!unitId || unitId === 'all') {
       const unitSummary = new Map()
-      
+
       assessmentData.forEach((assessment: any) => {
         const unitName = assessment.m_employees.m_units.name
         if (!unitSummary.has(unitName)) {
@@ -224,14 +225,14 @@ export async function GET(request: NextRequest) {
             p3_scores: []
           })
         }
-        
+
         const unit = unitSummary.get(unitName)
         unit.employees.add(assessment.employee_id)
         unit.total_assessments++
-        
+
         const score = assessment.score || 0
         unit.total_score += score
-        
+
         const category = assessment.m_kpi_indicators.m_kpi_categories.category.toLowerCase()
         if (category === 'p1') unit.p1_scores.push(score)
         else if (category === 'p2') unit.p2_scores.push(score)
@@ -239,13 +240,13 @@ export async function GET(request: NextRequest) {
       })
 
       const unitData = Array.from(unitSummary.entries()).map(([unitName, data]: [string, any]) => {
-        const p1Average = data.p1_scores.length > 0 ? 
+        const p1Average = data.p1_scores.length > 0 ?
           data.p1_scores.reduce((a: number, b: number) => a + b, 0) / data.p1_scores.length : 0
-        const p2Average = data.p2_scores.length > 0 ? 
+        const p2Average = data.p2_scores.length > 0 ?
           data.p2_scores.reduce((a: number, b: number) => a + b, 0) / data.p2_scores.length : 0
-        const p3Average = data.p3_scores.length > 0 ? 
+        const p3Average = data.p3_scores.length > 0 ?
           data.p3_scores.reduce((a: number, b: number) => a + b, 0) / data.p3_scores.length : 0
-        
+
         const overallAverage = data.total_assessments > 0 ? data.total_score / data.total_assessments : 0
 
         return {
@@ -260,7 +261,7 @@ export async function GET(request: NextRequest) {
       })
 
       const unitSheet = XLSX.utils.json_to_sheet(unitData)
-      
+
       // Set column widths for unit summary
       const unitCols = [
         { wch: 25 }, // Unit
@@ -281,7 +282,7 @@ export async function GET(request: NextRequest) {
 
     // Set response headers
     const filename = `laporan-penilaian-${period}${unitId && unitId !== 'all' ? `-${unitId}` : ''}.xlsx`
-    
+
     return new NextResponse(excelBuffer, {
       status: 200,
       headers: {

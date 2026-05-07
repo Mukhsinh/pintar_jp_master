@@ -25,6 +25,7 @@ interface SubIndicatorFormDialogProps {
     indicator: KPIIndicator | null
     existingSubIndicators: KPISubIndicator[]
     onSuccess: () => void
+    isMedicalUnit?: boolean
 }
 
 
@@ -50,7 +51,8 @@ export default function SubIndicatorFormDialog({
     subIndicator,
     indicator,
     existingSubIndicators,
-    onSuccess
+    onSuccess,
+    isMedicalUnit = false
 }: SubIndicatorFormDialogProps) {
     const supabase = createClient()
     const [isSubmitting, setIsSubmitting] = useState(false)
@@ -190,9 +192,9 @@ export default function SubIndicatorFormDialog({
             newErrors.name = 'Nama sub indikator wajib diisi'
         }
 
-        if (!formData.weight_percentage) {
+        if (!isMedicalUnit && !formData.weight_percentage) {
             newErrors.weight_percentage = 'Bobot wajib diisi'
-        } else {
+        } else if (!isMedicalUnit) {
             const weight = parseFloat(formData.weight_percentage)
             if (isNaN(weight) || weight <= 0) {
                 newErrors.weight_percentage = 'Bobot harus lebih besar dari 0'
@@ -252,7 +254,7 @@ export default function SubIndicatorFormDialog({
                 indicator_id: subIndicator?.indicator_id || indicator?.id!,
                 name: formData.name.trim(),
                 description: formData.description.trim() || undefined,
-                weight_percentage: parseFloat(formData.weight_percentage),
+                weight_percentage: isMedicalUnit ? 0 : parseFloat(formData.weight_percentage),
                 target_value: formData.target_value ? parseFloat(formData.target_value) : 0,
                 measurement_unit: formData.measurement_unit.trim() || undefined,
                 scoring_criteria: formData.scoring_criteria,
@@ -318,33 +320,35 @@ export default function SubIndicatorFormDialog({
                             {errors.name && <p className="text-sm text-red-600">{errors.name}</p>}
                         </div>
 
-                        <div className="grid grid-cols-1 gap-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="sub_weight">Bobot (%) *</Label>
-                                <Input
-                                    id="sub_weight"
-                                    type="number"
-                                    step="0.01"
-                                    min="0.01"
-                                    max="100"
-                                    value={formData.weight_percentage}
-                                    onChange={(e) => setFormData({ ...formData, weight_percentage: e.target.value })}
-                                    placeholder="25.00"
-                                />
-                                {errors.weight_percentage && <p className="text-sm text-red-600">{errors.weight_percentage}</p>}
-                                {formData.weight_percentage && !errors.weight_percentage && (() => {
-                                    const weightInfo = getTotalWeightInfo()
-                                    return (
-                                        <p className={`text-xs font-medium ${weightInfo.isValid ? 'text-green-600' : 'text-amber-600'}`}>
-                                            {weightInfo.message}
-                                        </p>
-                                    )
-                                })()}
-                                <p className="text-xs text-gray-500">
-                                    Total semua bobot sub indikator dalam indikator ini harus sama dengan 100%. Bobot individual dapat diisi kurang dari 100%.
-                                </p>
+                        {!isMedicalUnit && (
+                            <div className="grid grid-cols-1 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="sub_weight">Bobot (%) *</Label>
+                                    <Input
+                                        id="sub_weight"
+                                        type="number"
+                                        step="0.01"
+                                        min="0.01"
+                                        max="100"
+                                        value={formData.weight_percentage}
+                                        onChange={(e) => setFormData({ ...formData, weight_percentage: e.target.value })}
+                                        placeholder="25.00"
+                                    />
+                                    {errors.weight_percentage && <p className="text-sm text-red-600">{errors.weight_percentage}</p>}
+                                    {formData.weight_percentage && !errors.weight_percentage && (() => {
+                                        const weightInfo = getTotalWeightInfo()
+                                        return (
+                                            <p className={`text-xs font-medium ${weightInfo.isValid ? 'text-green-600' : 'text-amber-600'}`}>
+                                                {weightInfo.message}
+                                            </p>
+                                        )
+                                    })()}
+                                    <p className="text-xs text-gray-500">
+                                        Total semua bobot sub indikator dalam indikator ini harus sama dengan 100%. Bobot individual dapat diisi kurang dari 100%.
+                                    </p>
+                                </div>
                             </div>
-                        </div>
+                        )}
 
                         <div className="space-y-2">
                             <Label htmlFor="sub_unit">Satuan</Label>
