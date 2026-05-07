@@ -199,7 +199,7 @@ export const TariffTable = memo(function TariffTable({ tariffs }: TariffTablePro
                                     <TableCell className="text-right font-mono font-semibold">
                                         {tariff.type === 'activity'
                                             ? `Rp ${tariff.amount.toLocaleString('id-ID')}`
-                                            : tariff.amount.toFixed(4)
+                                            : tariff.amount.toFixed(2)
                                         }
                                     </TableCell>
                                     <TableCell className="text-center">

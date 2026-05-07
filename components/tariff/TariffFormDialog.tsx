@@ -157,14 +157,16 @@ export function TariffFormDialog({ tariff, open, onOpenChange }: TariffFormDialo
                             <SelectContent>
                                 <SelectItem value="Rawat Jalan">Rawat Jalan</SelectItem>
                                 <SelectItem value="Rawat Inap">Rawat Inap</SelectItem>
-                                <SelectItem value="Operatif">Operatif</SelectItem>
+                                <SelectItem value="IBS">IBS</SelectItem>
+                                <SelectItem value="Anestesi IBS">Anestesi IBS</SelectItem>
                                 <SelectItem value="Cathlab">Cathlab</SelectItem>
-                                <SelectItem value="Lab-PK">Lab-PK</SelectItem>
-                                <SelectItem value="Lab-PA">Lab-PA</SelectItem>
-                                <SelectItem value="Lab-MK">Lab-MK</SelectItem>
+                                <SelectItem value="Patologi Klinik">Patologi Klinik</SelectItem>
+                                <SelectItem value="Patologi Anatomi">Patologi Anatomi</SelectItem>
+                                <SelectItem value="Mikrobiologi Klinik">Mikrobiologi Klinik</SelectItem>
                                 <SelectItem value="Radiologi">Radiologi</SelectItem>
                                 <SelectItem value="Farmasi">Farmasi</SelectItem>
                                 <SelectItem value="Nutrisionis">Nutrisionis</SelectItem>
+                                <SelectItem value="Keperawatan">Keperawatan</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
@@ -203,7 +205,7 @@ export function TariffFormDialog({ tariff, open, onOpenChange }: TariffFormDialo
                         <Input
                             id="amount"
                             type="number"
-                            step={formData.type === 'activity' ? '1' : '0.0001'}
+                            step={formData.type === 'activity' ? '1' : '0.01'}
                             placeholder="0.00"
                             value={formData.amount}
                             onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}

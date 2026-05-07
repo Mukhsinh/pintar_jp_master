@@ -15,10 +15,10 @@ export async function GET() {
             },
             {
                 'Kode': 'IDX-001',
-                'Jenis Layanan': 'Radiologi',
-                'Nama': 'Visite Dokter Spesialis',
+                'Jenis Layanan': 'Patologi Klinik',
+                'Nama': 'Cek Darah Lengkap',
                 'Tipe (Aktivitas/Indeks)': 'Indeks',
-                'Nilai/Tarif': 0.125,
+                'Nilai/Tarif': 15.50,
                 'Status (Aktif/Nonaktif)': 'Aktif'
             }
         ]

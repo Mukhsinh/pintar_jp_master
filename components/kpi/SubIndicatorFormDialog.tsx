@@ -27,6 +27,22 @@ interface SubIndicatorFormDialogProps {
     onSuccess: () => void
 }
 
+
+const SERVICE_TYPES = [
+    'Rawat Jalan',
+    'Rawat Inap',
+    'IBS',
+    'Anestesi IBS',
+    'Cathlab',
+    'Patologi Klinik',
+    'Patologi Anatomi',
+    'Mikrobiologi Klinik',
+    'Radiologi',
+    'Farmasi',
+    'Nutrisionis',
+    'Keperawatan'
+]
+
 export default function SubIndicatorFormDialog({
     open,
     onOpenChange,
@@ -41,7 +57,7 @@ export default function SubIndicatorFormDialog({
         name: '',
         description: '',
         weight_percentage: '',
-        target_value: '',
+        target_value: '0',
         measurement_unit: '',
         scoring_criteria: [
             { score: 20, label: 'Sangat Kurang' },
@@ -52,7 +68,8 @@ export default function SubIndicatorFormDialog({
         ] as ScoringCriterion[],
         measurement_type: 'scoring' as 'scoring' | 'quantitative',
         unit_tariff: '',
-        base_index_value: ''
+        base_index_value: '',
+        service_types: [] as string[]
     })
     const [errors, setErrors] = useState<Record<string, string>>({})
     const [masterTariffs, setMasterTariffs] = useState<any[]>([])
@@ -86,7 +103,7 @@ export default function SubIndicatorFormDialog({
                 name: subIndicator.name,
                 description: subIndicator.description || '',
                 weight_percentage: subIndicator.weight_percentage.toString(),
-                target_value: subIndicator.target_value?.toString() || '',
+                target_value: subIndicator.target_value?.toString() || '0',
                 measurement_unit: subIndicator.measurement_unit || '',
                 scoring_criteria: subIndicator.scoring_criteria || [
                     { score: 20, label: 'Sangat Kurang' },
@@ -97,14 +114,15 @@ export default function SubIndicatorFormDialog({
                 ],
                 measurement_type: (subIndicator.measurement_type as any) || 'scoring',
                 unit_tariff: subIndicator.unit_tariff?.toString() || '',
-                base_index_value: subIndicator.base_index_value?.toString() || ''
+                base_index_value: subIndicator.base_index_value?.toString() || '',
+                service_types: subIndicator.service_types || []
             })
         } else {
             setFormData({
                 name: '',
                 description: '',
                 weight_percentage: '',
-                target_value: '',
+                target_value: '0',
                 measurement_unit: '',
                 scoring_criteria: [
                     { score: 20, label: 'Sangat Kurang' },
@@ -115,7 +133,8 @@ export default function SubIndicatorFormDialog({
                 ],
                 measurement_type: 'scoring',
                 unit_tariff: '',
-                base_index_value: ''
+                base_index_value: '',
+                service_types: []
             })
         }
         setErrors({})
@@ -233,12 +252,13 @@ export default function SubIndicatorFormDialog({
                 name: formData.name.trim(),
                 description: formData.description.trim() || undefined,
                 weight_percentage: parseFloat(formData.weight_percentage),
-                target_value: formData.target_value ? parseFloat(formData.target_value) : 100,
+                target_value: formData.target_value ? parseFloat(formData.target_value) : 0,
                 measurement_unit: formData.measurement_unit.trim() || undefined,
                 scoring_criteria: formData.scoring_criteria,
                 measurement_type: formData.measurement_type,
                 unit_tariff: formData.unit_tariff ? parseFloat(formData.unit_tariff) : undefined,
-                base_index_value: formData.base_index_value ? parseFloat(formData.base_index_value) : undefined
+                base_index_value: formData.base_index_value ? parseFloat(formData.base_index_value) : undefined,
+                service_types: formData.service_types
             }
 
             let result
@@ -297,7 +317,7 @@ export default function SubIndicatorFormDialog({
                             {errors.name && <p className="text-sm text-red-600">{errors.name}</p>}
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 gap-4">
                             <div className="space-y-2">
                                 <Label htmlFor="sub_weight">Bobot (%) *</Label>
                                 <Input
@@ -322,18 +342,6 @@ export default function SubIndicatorFormDialog({
                                 <p className="text-xs text-gray-500">
                                     Total semua bobot sub indikator dalam indikator ini harus sama dengan 100%. Bobot individual dapat diisi kurang dari 100%.
                                 </p>
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="sub_target">Nilai Target</Label>
-                                <Input
-                                    id="sub_target"
-                                    type="number"
-                                    step="0.01"
-                                    value={formData.target_value}
-                                    onChange={(e) => setFormData({ ...formData, target_value: e.target.value })}
-                                    placeholder="100.00"
-                                />
-                                {errors.target_value && <p className="text-sm text-red-600">{errors.target_value}</p>}
                             </div>
                         </div>
 
@@ -376,70 +384,54 @@ export default function SubIndicatorFormDialog({
                         </div>
 
                         {formData.measurement_type === 'quantitative' && (
-                            <div className="space-y-4 p-4 bg-orange-50 rounded-lg">
-                                <div className="space-y-2">
-                                    <Label className="flex items-center gap-2">
-                                        <Banknote className="h-4 w-4 text-orange-600" />
-                                        Pilih dari Master Tarif (Opsional)
-                                    </Label>
-                                    <select
-                                        value={selectedMasterTariffId}
-                                        onChange={(e) => {
-                                            const id = e.target.value
-                                            setSelectedMasterTariffId(id)
-                                            if (id) {
-                                                const selected = masterTariffs.find(t => t.id === id)
-                                                if (selected) {
-                                                    if (selected.type === 'activity') {
-                                                        setFormData({ ...formData, unit_tariff: selected.amount.toString(), base_index_value: '' })
-                                                    } else {
-                                                        setFormData({ ...formData, base_index_value: selected.amount.toString(), unit_tariff: '' })
-                                                    }
+                            <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <Label className="font-bold flex items-center gap-2">
+                                            Jenis Layanan *
+                                        </Label>
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-7 text-xs"
+                                            onClick={() => {
+                                                if (formData.service_types.length === SERVICE_TYPES.length) {
+                                                    setFormData({ ...formData, service_types: [] })
+                                                } else {
+                                                    setFormData({ ...formData, service_types: [...SERVICE_TYPES] })
                                                 }
-                                            }
-                                        }}
-                                        className="w-full px-3 py-2 border rounded-md bg-white"
-                                    >
-                                        <option value="">-- Pilih dari Master --</option>
-                                        {masterTariffs.map(t => (
-                                            <option key={t.id} value={t.id}>
-                                                [{t.code}] {t.service_type ? `${t.service_type} - ` : ''}{t.name} ({t.type === 'activity' ? `Rp ${t.amount.toLocaleString()}` : t.amount})
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <p className="text-[10px] text-gray-500 italic">
-                                        Memilih master tarif akan otomatis mengisi kolom di bawah ini.
-                                    </p>
-                                </div>
+                                            }}
+                                        >
+                                            {formData.service_types.length === SERVICE_TYPES.length ? 'Batal Semua' : 'Pilih Semua'}
+                                        </Button>
+                                    </div>
 
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="unit_tariff">Tarif per Volume (Rupiah)</Label>
-                                        <Input
-                                            id="unit_tariff"
-                                            type="number"
-                                            value={formData.unit_tariff}
-                                            onChange={(e) => setFormData({ ...formData, unit_tariff: e.target.value })}
-                                            placeholder="Contoh: 5000"
-                                        />
-                                        <p className="text-[10px] text-gray-500 italic">
-                                            Digunakan jika kategori pengukurannya adalah "Berbasis Aktivitas".
-                                        </p>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-white p-3 rounded border">
+                                        {SERVICE_TYPES.map((type) => (
+                                            <div key={type} className="flex items-center space-x-2">
+                                                <input
+                                                    type="checkbox"
+                                                    id={`st-${type}`}
+                                                    checked={formData.service_types.includes(type)}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked
+                                                        const newTypes = checked
+                                                            ? [...formData.service_types, type]
+                                                            : formData.service_types.filter(t => t !== type)
+                                                        setFormData({ ...formData, service_types: newTypes })
+                                                    }}
+                                                    className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                                                />
+                                                <label htmlFor={`st-${type}`} className="text-xs text-gray-700 cursor-pointer">
+                                                    {type}
+                                                </label>
+                                            </div>
+                                        ))}
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="base_index_value">Nilai Dasar Indeks / Poin</Label>
-                                        <Input
-                                            id="base_index_value"
-                                            type="number"
-                                            step="0.0001"
-                                            value={formData.base_index_value}
-                                            onChange={(e) => setFormData({ ...formData, base_index_value: e.target.value })}
-                                            placeholder="Contoh: 0.125"
-                                        />
-                                        <p className="text-[10px] text-gray-500 italic">
-                                            Digunakan jika kategori pengukurannya adalah "Berbasis Indeks".
-                                        </p>
-                                    </div>
+                                    <p className="text-[10px] text-gray-500 italic">
+                                        Pilih layanan yang akan diintegrasikan dengan sub indikator ini. Pengisian volume dilakukan di penilaian.
+                                    </p>
                                 </div>
                             </div>
                         )}

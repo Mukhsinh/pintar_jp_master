@@ -44,6 +44,7 @@ export interface KPISubIndicator {
   measurement_type?: 'scoring' | 'quantitative' | null
   unit_tariff?: number | null
   base_index_value?: number | null
+  service_types?: string[] | null
 }
 
 // Extended types with relations

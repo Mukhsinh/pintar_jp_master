@@ -135,7 +135,7 @@ export async function GET(request: NextRequest) {
     if (indicatorIds.length > 0) {
       const { data: subInds, error: subIndicatorsError } = await adminClient
         .from('m_kpi_sub_indicators')
-        .select('id, indicator_id, code, name, target_value, weight_percentage, scoring_criteria, measurement_unit, description, measurement_type, unit_tariff, base_index_value')
+        .select('id, indicator_id, code, name, target_value, weight_percentage, scoring_criteria, measurement_unit, description, measurement_type, unit_tariff, base_index_value, service_types')
         .eq('is_active', true)
         .in('indicator_id', indicatorIds)
 
@@ -144,6 +144,26 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: `Failed to fetch sub-indicators: ${subIndicatorsError.message}` }, { status: 500 })
       }
       subIndicators = subInds || []
+
+      // Fetch all unique service types across all sub-indicators to minimize queries
+      const allServiceTypes = Array.from(new Set(subIndicators.flatMap(s => s.service_types || [])))
+
+      let masterTariffs: any[] = []
+      if (allServiceTypes.length > 0) {
+        const { data: tariffs } = await adminClient
+          .from('m_master_tariffs')
+          .select('*')
+          .eq('is_active', true)
+          .in('service_type', allServiceTypes)
+
+        masterTariffs = tariffs || []
+      }
+
+      // Add relevant master tariffs to each sub-indicator
+      subIndicators = subIndicators.map(sub => ({
+        ...sub,
+        tariffs: masterTariffs.filter(t => sub.service_types?.includes(t.service_type))
+      }))
     }
 
     console.log('[indicators] sub-indicators count:', subIndicators.length)
@@ -167,7 +187,9 @@ export async function GET(request: NextRequest) {
         description: sub.description,
         measurement_type: sub.measurement_type,
         unit_tariff: sub.unit_tariff,
-        base_index_value: sub.base_index_value
+        base_index_value: sub.base_index_value,
+        service_types: sub.service_types,
+        tariffs: sub.tariffs
       })
 
     })

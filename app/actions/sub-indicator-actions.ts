@@ -14,6 +14,7 @@ export async function createSubIndicator(formData: {
   measurement_type?: 'scoring' | 'quantitative'
   unit_tariff?: number
   base_index_value?: number
+  service_types?: string[]
 }) {
   const supabase = await createClient()
 
@@ -69,7 +70,7 @@ export async function createSubIndicator(formData: {
       .eq('indicator_id', formData.indicator_id)
       .eq('is_active', true)
 
-    const totalExistingWeight = existingSubs?.reduce((sum, sub) => sum + Number(sub.weight_percentage), 0) || 0
+    const totalExistingWeight = existingSubs?.reduce((sum, sub) => sum + Number(sum.weight_percentage), 0) || 0
     const newTotalWeight = totalExistingWeight + formData.weight_percentage
 
     if (newTotalWeight > 100.01) { // Allow small floating point tolerance
@@ -111,6 +112,7 @@ export async function updateSubIndicator(id: string, formData: {
   measurement_type?: 'scoring' | 'quantitative'
   unit_tariff?: number
   base_index_value?: number
+  service_types?: string[]
 }) {
   const supabase = await createClient()
 

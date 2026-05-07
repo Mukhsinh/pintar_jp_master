@@ -35,6 +35,13 @@ interface KPISubIndicator {
   measurement_type?: 'scoring' | 'quantitative'
   unit_tariff?: number
   base_index_value?: number
+  service_types?: string[]
+  tariffs?: Array<{
+    id: string
+    service_type: string
+    name: string
+    tariff: number
+  }>
 }
 
 interface KPIIndicator {
@@ -593,45 +600,111 @@ export default function AssessmentFormDialog({
                                       </div>
 
                                       {isQuantitative ? (
-                                        <div className="space-y-2">
-                                          <div className="flex items-center gap-2">
-                                            <div className="flex-1">
-                                              <Label className="text-[10px] text-gray-500 mb-1 block">Input Volume ({sub.measurement_unit || 'qty'})</Label>
-                                              <Input
-                                                type="number"
-                                                step="0.01"
-                                                className="h-8 text-sm bg-white"
-                                                placeholder="0.00"
-                                                value={subRealization || ''}
-                                                onChange={(e) => {
-                                                  const vol = parseFloat(e.target.value) || 0
-                                                  // Calculation logic for quantitative score:
-                                                  // For Activity: Volume * Tariff
-                                                  // For Index: Volume * Base Index
-                                                  // The actual decision is in the calculation engine, but here we need a 'score'
-                                                  // to contribute to the indicator.
-                                                  // If category is activity, score is Rupiah. If index, score is Poin.
-                                                  const category = categories.find(c => c.indicators.some(i => i.id === indicator.id))
-                                                  const isActivity = category?.configuration_style === 'activity'
+                                        <div className="space-y-3">
+                                          {sub.tariffs && sub.tariffs.length > 0 ? (
+                                            <div className="grid gap-2 border rounded-md p-2 bg-white/50">
+                                              <Label className="text-[10px] font-bold text-blue-800 uppercase px-1">Daftar Layanan ({sub.tariffs.length})</Label>
+                                              {sub.tariffs.map((tariff) => {
+                                                // We need to store volumes per sub_indicator_id AND tariff_id
+                                                // For now, we'll use a specialized structure for realization_value in sub_assessments if needed, 
+                                                // but sub_assessments typically stores one realization_value.
+                                                // Let's assume realization_value here is the TOTAL SUM, but we need to track individual volumes.
+                                                // To keep it simple without changing the DB schema too much yet, 
+                                                // we can store the breakdown in 'notes' or just calculate the total realization here.
+                                                // Actually, the assessment table stores realization_value.
 
-                                                  let calculatedScore = 0
-                                                  if (isActivity) {
-                                                    calculatedScore = vol * (sub.unit_tariff || 0)
-                                                  } else {
-                                                    calculatedScore = vol * (sub.base_index_value || 0)
-                                                  }
+                                                // To track individual volumes in the UI state without DB changes, 
+                                                // we might need a local state or use sub_assessments with a JSON breakdown in visualization.
+                                                // For now, let's just use a local tracking if possible.
 
-                                                  handleSubAssessmentChange(indicator.id, sub.id, vol, calculatedScore)
-                                                }}
-                                              />
-                                            </div>
-                                            <div className="w-1/3">
-                                              <Label className="text-[10px] text-gray-500 mb-1 block">Hasil Skor/Nilai</Label>
-                                              <div className="h-8 text-xs bg-gray-100 border rounded flex items-center px-2 font-medium">
-                                                {subScore.toLocaleString('id-ID')}
+                                                return (
+                                                  <div key={tariff.id} className="flex items-center gap-2 bg-white p-2 rounded border border-blue-50 shadow-sm">
+                                                    <div className="flex-1">
+                                                      <p className="text-xs font-semibold">{tariff.name}</p>
+                                                      <p className="text-[10px] text-gray-500">Tarif: Rp {tariff.tariff.toLocaleString('id-ID')}</p>
+                                                    </div>
+                                                    <div className="w-24">
+                                                      <Input
+                                                        type="number"
+                                                        placeholder="Vol"
+                                                        className="h-7 text-xs"
+                                                        onChange={(e) => {
+                                                          const vol = parseFloat(e.target.value) || 0
+                                                          // Calculate total realization for this sub-indicator
+                                                          // We need to know other volumes too to get the correct sum.
+                                                          // This is tricky because subAssessment only stores ONE realization_value.
+
+                                                          // Let's use a temporary approach: 
+                                                          // We'll use a data attribute on the inputs to sum them up on any change.
+                                                          const container = e.target.closest('.grid');
+                                                          if (container) {
+                                                            const inputs = container.querySelectorAll('input');
+                                                            let subIndicatorTotal = 0;
+                                                            inputs.forEach((input: any, idx) => {
+                                                              const t = sub.tariffs![idx];
+                                                              const v = parseFloat(input.value) || 0;
+                                                              subIndicatorTotal += v * t.tariff;
+                                                            });
+
+                                                            const category = categories.find(c => c.indicators.some(i => i.id === indicator.id))
+                                                            const isActivity = category?.configuration_style === 'activity'
+                                                            let calculatedScore = 0
+                                                            if (isActivity) {
+                                                              calculatedScore = subIndicatorTotal // Porsi langsung rupiah
+                                                            } else {
+                                                              // For index, it might be different, but let's assume realization * base_index
+                                                              calculatedScore = subIndicatorTotal * (sub.base_index_value || 1)
+                                                            }
+
+                                                            handleSubAssessmentChange(indicator.id, sub.id, subIndicatorTotal, calculatedScore)
+                                                          }
+                                                        }}
+                                                      />
+                                                    </div>
+                                                  </div>
+                                                )
+                                              })}
+                                              <div className="flex justify-between items-center px-1 mt-1 border-t pt-2">
+                                                <Label className="text-[10px] font-bold">TOTAL REALISASI</Label>
+                                                <div className="text-sm font-bold text-blue-700">
+                                                  Rp {subRealization.toLocaleString('id-ID')}
+                                                </div>
                                               </div>
                                             </div>
-                                          </div>
+                                          ) : (
+                                            <div className="flex items-center gap-2">
+                                              <div className="flex-1">
+                                                <Label className="text-[10px] text-gray-500 mb-1 block">Input Volume ({sub.measurement_unit || 'qty'})</Label>
+                                                <Input
+                                                  type="number"
+                                                  step="0.01"
+                                                  className="h-8 text-sm bg-white"
+                                                  placeholder="0.00"
+                                                  value={subRealization || ''}
+                                                  onChange={(e) => {
+                                                    const vol = parseFloat(e.target.value) || 0
+                                                    const category = categories.find(c => c.indicators.some(i => i.id === indicator.id))
+                                                    const isActivity = category?.configuration_style === 'activity'
+
+                                                    let calculatedScore = 0
+                                                    if (isActivity) {
+                                                      calculatedScore = vol * (sub.unit_tariff || 0)
+                                                    } else {
+                                                      calculatedScore = vol * (sub.base_index_value || 0)
+                                                    }
+
+                                                    handleSubAssessmentChange(indicator.id, sub.id, vol, calculatedScore)
+                                                  }}
+                                                />
+                                              </div>
+                                              <div className="w-1/3">
+                                                <Label className="text-[10px] text-gray-500 mb-1 block">Hasil Skor/Nilai</Label>
+                                                <div className="h-8 text-xs bg-gray-100 border rounded flex items-center px-2 font-medium">
+                                                  {subScore.toLocaleString('id-ID')}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          )}
                                         </div>
                                       ) : hasCriteria ? (
                                         <div className="flex flex-wrap gap-2 mt-1">
