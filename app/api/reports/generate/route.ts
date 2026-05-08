@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
+import { isMedicalUnit } from '@/lib/utils/medical-unit'
 
 /**
  * PPh 21 Progressive Tax Calculator (UU HPP)
@@ -148,7 +149,6 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
 
   const netPool = poolData?.net_pool || 0
 
-  // 2. Get ALL active employees with their units (needed for unit-level total score)
   const { data: allEmployees, error: allEmpError } = await supabase
     .from('m_employees')
     .select(`
@@ -156,15 +156,14 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
       m_units (
         id,
         name,
-        proportion_percentage,
-        remuneration_style
+        proportion_percentage
       )
     `)
     .eq('is_active', true)
 
   if (allEmpError) {
     console.error('Error fetching employees:', allEmpError)
-    throw new Error('Failed to fetch employee data')
+    throw new Error('Failed to fetch employee data: ' + JSON.stringify(allEmpError))
   }
 
   // 3. Get ALL assessments for the period (needed for total score per unit)
@@ -253,15 +252,15 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
     if (!uId || unitPIRMap.has(uId)) continue
 
     // Determine Style
-    const style = unitData?.remuneration_style || 'score_based'
-    const unitProp = parseFloat(unitData?.proportion_percentage || '0')
     const unitName = unitData?.name || '-'
+    const isMedical = isMedicalUnit(uId, unitName)
+    const unitProp = parseFloat(unitData?.proportion_percentage || '0')
     const totalSkorUnit = unitTotalScoresMap.get(uId) || 0
     const empCount = unitEmployeeCountMap.get(uId) || 0
     const allocatedForUnit = netPool * (unitProp / 100)
 
     let pir = 0
-    if (style === 'activity_based_pir') {
+    if (isMedical) {
       // MEDIS Style PIR Calculation: (Allocated - Aggregate Guarantee Fees) / Total Activity Index Points
       const { data: masterDocs } = await supabase
         .from('remunerasi_master_dokter')
@@ -313,11 +312,10 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
     const pir = uId ? (unitPIRMap.get(uId) || 0) : 0
     const totalSkorUnit = uId ? (unitTotalScoresMap.get(uId) || 0) : 0
 
-    // Insentif Bruto calculation logic
-    const style = unitData?.remuneration_style || 'score_based'
+    const isMedical = isMedicalUnit(uId, unitName)
     let grossIncentive = totalScore * pir
 
-    if (style === 'activity_based_pir') {
+    if (isMedical) {
       // For doctors, add Guarantee Fee (Guarantee Fee + Indexed Score Portion)
       const { data: doctorMaster } = await supabase
         .from('remunerasi_master_dokter')
