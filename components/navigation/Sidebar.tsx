@@ -89,7 +89,8 @@ const ALL_MENU_ITEMS: MenuItem[] = [
   { id: 'kpi-config', label: 'Konfigurasi KPI', path: '/kpi-config', icon: 'Target' },
   { id: 'pool', label: 'Pool Insentif', path: '/pool', icon: 'Wallet' },
   { id: 'assessment', label: 'Penilaian KPI', path: '/assessment', icon: 'ClipboardCheck' },
-  { id: 'reports', label: 'Laporan', path: '/reports', icon: 'FileText' },
+  { id: 'reports', label: 'Laporan', path: '/reports', icon: 'BarChart3' },
+  { id: 'audit', label: 'Audit Trail', path: '/audit', icon: 'Shield' },
   { id: 'settings', label: 'Pengaturan', path: '/settings', icon: 'Settings' },
   { id: 'notifications', label: 'Notifikasi', path: '/notifications', icon: 'Bell' },
 ]
@@ -98,10 +99,10 @@ function getMenuItems(role: string): MenuItem[] {
   if (role === 'superadmin') return ALL_MENU_ITEMS
   if (role === 'unit_manager') {
     return ALL_MENU_ITEMS.filter(i =>
-      ['dashboard', 'assessment', 'reports', 'notifications'].includes(i.id)
+      i && ['dashboard', 'kpi-config', 'assessment', 'reports', 'notifications'].includes(i.id)
     )
   }
-  return ALL_MENU_ITEMS.filter(i => ['dashboard', 'notifications'].includes(i.id))
+  return [] // Employees have no access as per requirement
 }
 
 // ── Auth Hook ────────────────────────────────────────────────────────────────
@@ -313,6 +314,7 @@ export default function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-3 space-y-1">
         {menuItems.map(item => {
+          if (!item) return null
           const Icon = iconMap[item.icon] || User
           const active = isActive(item.path)
           const isNotif = item.id === 'notifications'

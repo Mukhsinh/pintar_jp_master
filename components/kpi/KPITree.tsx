@@ -17,6 +17,7 @@ interface KPITreeProps {
   onAddSubIndicator: (indicatorId: string) => void
   onEditSubIndicator: (subIndicator: KPISubIndicator) => void
   onDeleteSubIndicator: (subIndicatorId: string) => void
+  isReadOnly?: boolean
 }
 
 const KPITree = memo(function KPITree({
@@ -30,7 +31,8 @@ const KPITree = memo(function KPITree({
   onDeleteIndicator,
   onAddSubIndicator,
   onEditSubIndicator,
-  onDeleteSubIndicator
+  onDeleteSubIndicator,
+  isReadOnly = false
 }: KPITreeProps) {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [expandedIndicators, setExpandedIndicators] = useState<Set<string>>(new Set())
@@ -190,30 +192,32 @@ const KPITree = memo(function KPITree({
                   )}
                 </div>
               </div>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onAddIndicator(category.id)}
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  Tambah Indikator
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onEditCategory(category)}
-                >
-                  <Edit className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onDeleteCategory(category.id)}
-                >
-                  <Trash2 className="h-4 w-4 text-red-600" />
-                </Button>
-              </div>
+              {!isReadOnly && (
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onAddIndicator(category.id)}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Tambah Indikator
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onEditCategory(category)}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onDeleteCategory(category.id)}
+                  >
+                    <Trash2 className="h-4 w-4 text-red-600" />
+                  </Button>
+                </div>
+              )}
             </div>
 
             {/* Indicators */}
@@ -277,31 +281,33 @@ const KPITree = memo(function KPITree({
                               )}
                             </div>
                           </div>
-                          <div className="flex gap-1">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => onAddSubIndicator(indicator.id)}
-                              title="Tambah Sub Indikator"
-                            >
-                              <Plus className="h-4 w-4 mr-1" />
-                              <span className="text-xs">Sub</span>
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => onEditIndicator(indicator)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => onDeleteIndicator(indicator.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-600" />
-                            </Button>
-                          </div>
+                          {!isReadOnly && (
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => onAddSubIndicator(indicator.id)}
+                                title="Tambah Sub Indikator"
+                              >
+                                <Plus className="h-4 w-4 mr-1" />
+                                <span className="text-xs">Sub</span>
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => onEditIndicator(indicator)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => onDeleteIndicator(indicator.id)}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-600" />
+                              </Button>
+                            </div>
+                          )}
                         </div>
 
                         {/* Sub Indicators */}
@@ -310,12 +316,14 @@ const KPITree = memo(function KPITree({
                             {indicatorSubs.length === 0 ? (
                               <p className="text-sm text-gray-400 text-center py-3 px-4">
                                 Belum ada sub indikator.
-                                <button
-                                  onClick={() => onAddSubIndicator(indicator.id)}
-                                  className="text-blue-600 hover:underline ml-1"
-                                >
-                                  Tambah sekarang
-                                </button>
+                                {!isReadOnly && (
+                                  <button
+                                    onClick={() => onAddSubIndicator(indicator.id)}
+                                    className="text-blue-600 hover:underline ml-1"
+                                  >
+                                    Tambah sekarang
+                                  </button>
+                                )}
                               </p>
                             ) : (
                               <div className="p-3 space-y-2">
@@ -362,29 +370,31 @@ const KPITree = memo(function KPITree({
                                           <p className="text-xs text-gray-500 mt-1.5">{sub.description}</p>
                                         )}
                                       </div>
-                                      <div className="flex gap-1 ml-2 shrink-0">
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          onClick={() => onEditSubIndicator(sub)}
-                                          className="h-7 w-7 p-0"
-                                        >
-                                          <Edit className="h-3.5 w-3.5" />
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          onClick={(e) => {
-                                            e.preventDefault()
-                                            e.stopPropagation()
-                                            onDeleteSubIndicator(sub.id)
-                                          }}
-                                          className="h-7 w-7 p-0 hover:bg-red-50"
-                                          title="Hapus Sub Indikator"
-                                        >
-                                          <Trash2 className="h-3.5 w-3.5 text-red-600" />
-                                        </Button>
-                                      </div>
+                                      {!isReadOnly && (
+                                        <div className="flex gap-1 ml-2 shrink-0">
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => onEditSubIndicator(sub)}
+                                            className="h-7 w-7 p-0"
+                                          >
+                                            <Edit className="h-3.5 w-3.5" />
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={(e) => {
+                                              e.preventDefault()
+                                              e.stopPropagation()
+                                              onDeleteSubIndicator(sub.id)
+                                            }}
+                                            className="h-7 w-7 p-0 hover:bg-red-50"
+                                            title="Hapus Sub Indikator"
+                                          >
+                                            <Trash2 className="h-3.5 w-3.5 text-red-600" />
+                                          </Button>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 ))}

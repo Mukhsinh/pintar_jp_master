@@ -30,23 +30,24 @@ export interface UserWithPegawai {
 export async function getUsers(
   page: number = 1,
   pageSize: number = 50,
-  searchTerm: string = ''
+  searchTerm: string = '',
+  roleFilter: string = 'all'
 ): Promise<{ data: UserWithPegawai[]; count: number; error?: string }> {
   try {
     const supabase = await createClient()
-    
+
     // Verify user is authenticated
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) {
       return { data: [], count: 0, error: 'Tidak terautentikasi' }
     }
-    
+
     // Check if user is superadmin from user metadata
     const userRole = authUser.user_metadata?.role
     if (userRole !== 'superadmin') {
       return { data: [], count: 0, error: 'Tidak memiliki akses' }
     }
-    
+
     // Get all employees with user_id
     let query = supabase
       .from('m_employees')
@@ -64,23 +65,28 @@ export async function getUsers(
       `, { count: 'exact' })
       .not('user_id', 'is', null)
       .order('created_at', { ascending: false })
-    
+
     // Apply search filter
     if (searchTerm) {
       query = query.or(`full_name.ilike.%${searchTerm}%,employee_code.ilike.%${searchTerm}%`)
     }
-    
+
+    // Apply role filter
+    if (roleFilter !== 'all') {
+      query = query.eq('role', roleFilter)
+    }
+
     // Apply pagination
     const from = (page - 1) * pageSize
     const to = from + pageSize - 1
     query = query.range(from, to)
-    
+
     const { data, error, count } = await query
-    
+
     if (error) {
       return { data: [], count: 0, error: error.message }
     }
-    
+
     // Get auth users to get email and role using service role
     const { createClient: createServiceClient } = await import('@supabase/supabase-js')
     const adminClient = createServiceClient(
@@ -99,19 +105,19 @@ export async function getUsers(
       }
     )
     const { data: authUsersData, error: authError } = await adminClient.auth.admin.listUsers()
-    
+
     if (authError) {
       console.error('Error fetching auth users:', authError)
       return { data: [], count: 0, error: authError.message }
     }
-    
+
     const authUsers = authUsersData
-    
+
     // Transform data to match UserWithPegawai type
     const transformedData: UserWithPegawai[] = (data || []).map((employee: any) => {
       const authUser = authUsers.users.find(u => u.id === employee.user_id)
       const unit = Array.isArray(employee.m_units) ? employee.m_units[0] : employee.m_units
-      
+
       return {
         id: employee.user_id,
         email: authUser?.email || '',
@@ -131,7 +137,7 @@ export async function getUsers(
         unit: unit || null
       }
     })
-    
+
     return { data: transformedData, count: count || 0 }
   } catch (err: any) {
     console.error('getUsers error:', err)

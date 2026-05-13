@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
-import { 
-  isPublicRoute, 
-  isLegacyRoute, 
+import {
+  isPublicRoute,
+  isLegacyRoute,
   getLegacyRedirectPath,
-  isRouteAllowed 
+  isRouteAllowed
 } from '@/lib/services/route-config.service'
 import type { Role } from '@/lib/services/rbac.service'
 
@@ -22,12 +22,12 @@ class LRUCache<T> {
   get(key: string): T | null {
     const item = this.cache.get(key)
     if (!item) return null
-    
+
     if (Date.now() - item.timestamp > this.ttl) {
       this.cache.delete(key)
       return null
     }
-    
+
     // Move to end (LRU)
     this.cache.delete(key)
     this.cache.set(key, item)
@@ -38,9 +38,9 @@ class LRUCache<T> {
     // Remove oldest if at capacity
     if (this.cache.size >= this.maxSize) {
       const firstKey = this.cache.keys().next().value
-      this.cache.delete(firstKey)
+      if (firstKey !== undefined) this.cache.delete(firstKey)
     }
-    
+
     this.cache.set(key, { value, timestamp: Date.now() })
   }
 
@@ -73,7 +73,7 @@ function shouldCleanup(): boolean {
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
-  
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -146,21 +146,21 @@ export async function middleware(request: NextRequest) {
 
     // Get session and refresh if needed
     let session = null
-    
+
     try {
       // First try to get current session
       const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession()
-      
+
       if (sessionError) {
         console.error('[MIDDLEWARE] Session fetch failed:', sessionError)
       } else if (currentSession) {
         session = currentSession
-        
+
         // Check if session needs refresh (expires in less than 60 seconds)
         const expiresAt = currentSession.expires_at || 0
         const now = Math.floor(Date.now() / 1000)
         const timeUntilExpiry = expiresAt - now
-        
+
         if (timeUntilExpiry < 60 && timeUntilExpiry > 0) {
           // Refresh the session
           const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession()
@@ -195,13 +195,13 @@ export async function middleware(request: NextRequest) {
       if (pathname !== '/login') {
         const loginUrl = new URL('/login', request.url)
         const redirectResponse = NextResponse.redirect(loginUrl)
-        
+
         // Clear auth cookies
         const cookiesToClear = ['sb-access-token', 'sb-refresh-token', 'supabase-auth-token', 'sb-auth-token']
         cookiesToClear.forEach(cookieName => {
           redirectResponse.cookies.set(cookieName, '', { maxAge: 0, path: '/' })
         })
-        
+
         return redirectResponse
       }
       // If already on login page, just continue
@@ -210,7 +210,14 @@ export async function middleware(request: NextRequest) {
 
     // 5. Get employee data and role (with optimized caching)
     let employeeData = employeeCache.get(session.user.id)
-    
+
+    // Check if cached role matches auth metadata role
+    // If not, invalidate cache to pick up the updated role
+    const sessionMetadataRole = session.user.user_metadata?.role
+    if (employeeData && sessionMetadataRole && employeeData.role !== sessionMetadataRole) {
+      employeeData = null // Invalidate cache
+    }
+
     if (!employeeData) {
       // Get employee record first to get role and status
       const { data: employee, error: employeeError } = await supabase
@@ -219,39 +226,42 @@ export async function middleware(request: NextRequest) {
         .eq('user_id', session.user.id)
         .limit(1)
         .maybeSingle()
-      
+
       if (employeeError || !employee) {
         console.error('[MIDDLEWARE] Employee fetch error for:', session.user.email)
         const loginUrl = new URL('/login', request.url)
         loginUrl.searchParams.set('error', 'user_not_found')
-        
+
         const redirectResponse = NextResponse.redirect(loginUrl)
         const cookiesToClear = ['sb-access-token', 'sb-refresh-token', 'supabase-auth-token', 'sb-auth-token']
         cookiesToClear.forEach(cookieName => {
           redirectResponse.cookies.set(cookieName, '', { maxAge: 0, path: '/' })
         })
-        
+
         return redirectResponse
       }
-      
+
       // Get role from employee data (primary source) or fallback to metadata
-      const role = employee.role || 
-                   session.user.user_metadata?.role
-      
+      const metadataRole = session.user.user_metadata?.role
+      // If auth metadata has a different role than m_employees, prefer metadata role
+      // (metadata is the source of truth for role changes made via the admin UI)
+      // The actual DB sync happens via /api/users/sync-role called during login
+      let role = metadataRole || employee.role
+
       if (!role) {
         console.error('[MIDDLEWARE] Role not found for user:', session.user.email)
         const loginUrl = new URL('/login', request.url)
         loginUrl.searchParams.set('error', 'user_not_found')
-        
+
         const redirectResponse = NextResponse.redirect(loginUrl)
         const cookiesToClear = ['sb-access-token', 'sb-refresh-token', 'supabase-auth-token', 'sb-auth-token']
         cookiesToClear.forEach(cookieName => {
           redirectResponse.cookies.set(cookieName, '', { maxAge: 0, path: '/' })
         })
-        
+
         return redirectResponse
       }
-      
+
       // Cache the employee data
       employeeData = {
         role: role as Role,
@@ -259,37 +269,37 @@ export async function middleware(request: NextRequest) {
       }
       employeeCache.set(session.user.id, employeeData)
     }
-    
+
     // 6. Check if employee is active
     if (!employeeData.is_active) {
       const loginUrl = new URL('/login', request.url)
       loginUrl.searchParams.set('error', 'inactive')
-      
+
       const redirectResponse = NextResponse.redirect(loginUrl)
       const cookiesToClear = ['sb-access-token', 'sb-refresh-token', 'supabase-auth-token', 'sb-auth-token']
       cookiesToClear.forEach(cookieName => {
         redirectResponse.cookies.set(cookieName, '', { maxAge: 0, path: '/' })
       })
-      
+
       return redirectResponse
     }
-    
+
     // 7. Check route authorization
     if (!isRouteAllowed(pathname, employeeData.role)) {
       const forbiddenUrl = new URL('/forbidden', request.url)
       return NextResponse.redirect(forbiddenUrl)
     }
-    
+
     // 8. Set security headers
     response.headers.set('X-Frame-Options', 'DENY')
     response.headers.set('X-Content-Type-Options', 'nosniff')
     response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
     response.headers.set('X-XSS-Protection', '1; mode=block')
-    
+
     return response
   } catch (error: any) {
     console.error('Middleware error:', error)
-    
+
     // On any error, redirect to login and clear cookies
     const loginUrl = new URL('/login', request.url)
     const redirectResponse = NextResponse.redirect(loginUrl)
@@ -297,7 +307,7 @@ export async function middleware(request: NextRequest) {
     cookiesToClear.forEach(cookieName => {
       redirectResponse.cookies.set(cookieName, '', { maxAge: 0, path: '/' })
     })
-    
+
     return redirectResponse
   }
 }

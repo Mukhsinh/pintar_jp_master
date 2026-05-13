@@ -45,7 +45,7 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [tempPassword, setTempPassword] = useState('')
-  
+
   useEffect(() => {
     if (open) {
       loadPegawai()
@@ -69,7 +69,7 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
       setTempPassword('')
     }
   }, [open, user])
-  
+
   const loadPegawai = async () => {
     const supabase = createClient()
     const { data } = await supabase
@@ -78,12 +78,12 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
       .eq('is_active', true)
       .is('user_id', null)
       .order('full_name')
-    
+
     if (data) {
       setPegawaiList(data)
     }
   }
-  
+
   const loadUnits = async () => {
     const supabase = createClient()
     const { data } = await supabase
@@ -91,12 +91,12 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
       .select('id, name')
       .eq('is_active', true)
       .order('name')
-    
+
     if (data) {
       setUnitList(data)
     }
   }
-  
+
   const handleEmployeeToggle = (employeeId: string) => {
     setFormData(prev => {
       const isSelected = prev.employee_ids.includes(employeeId)
@@ -113,12 +113,12 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
       }
     })
   }
-  
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
-    
+
     try {
       if (!user) {
         // Create new user
@@ -127,22 +127,22 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
           setLoading(false)
           return
         }
-        
+
         if (formData.employee_ids.length === 0) {
           setError('Pilih minimal satu pegawai')
           setLoading(false)
           return
         }
-        
+
         let successCount = 0
         let failedEmployees: string[] = []
-        
+
         for (const employeeId of formData.employee_ids) {
           const employee = pegawaiList.find(p => p.id === employeeId)
           if (!employee) continue
-          
+
           const email = `${employee.employee_code.toLowerCase()}@jaspel.local`
-          
+
           const response = await fetch('/api/users/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -153,16 +153,16 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
               employee_id: employeeId,
             })
           })
-          
+
           const result = await response.json()
-          
+
           if (result.success) {
             successCount++
           } else {
             failedEmployees.push(employee.full_name)
           }
         }
-        
+
         if (successCount > 0) {
           setTempPassword(formData.password)
           let message = `Berhasil membuat ${successCount} pengguna. Password: ${formData.password}`
@@ -181,13 +181,13 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
           setLoading(false)
           return
         }
-        
+
         if (!formData.unit_id) {
           setError('Unit wajib dipilih')
           setLoading(false)
           return
         }
-        
+
         const response = await fetch('/api/users/update', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -196,12 +196,13 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
             email: user.email,
             role: formData.role,
             unit_id: formData.unit_id,
+            password: formData.password || undefined,
             employee_id: formData.employee_ids[0] || null,
           })
         })
-        
+
         const result = await response.json()
-        
+
         if (result.success) {
           alert('Pengguna berhasil diperbarui')
           onSuccess()
@@ -212,12 +213,12 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
     } catch (err: any) {
       setError(err.message || 'Terjadi kesalahan')
     }
-    
+
     setLoading(false)
   }
-  
+
   if (!open) return null
-  
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
@@ -229,7 +230,7 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
             <X className="h-5 w-5" />
           </button>
         </div>
-        
+
         <form onSubmit={handleSubmit} className="space-y-4">
           {user && (
             <>
@@ -241,7 +242,7 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
                   className="bg-gray-50"
                 />
               </div>
-              
+
               <div>
                 <Label>Email</Label>
                 <Input
@@ -252,7 +253,7 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
               </div>
             </>
           )}
-          
+
           <div>
             <Label htmlFor="role">Peran *</Label>
             <select
@@ -262,15 +263,14 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
               className="w-full border rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             >
-              <option value="employee">{roleLabels.employee}</option>
-              <option value="unit_manager">{roleLabels.unit_manager}</option>
               <option value="superadmin">{roleLabels.superadmin}</option>
+              <option value="unit_manager">{roleLabels.unit_manager}</option>
             </select>
             <p className="text-xs text-gray-500 mt-1">
               Pilih peran untuk menentukan hak akses pengguna
             </p>
           </div>
-          
+
           {user && (
             <div>
               <Label htmlFor="unit_id">Unit *</Label>
@@ -293,24 +293,26 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
               </p>
             </div>
           )}
-          
+
+          <div>
+            <Label htmlFor="password">{user ? 'Reset Password' : 'Password *'}</Label>
+            <Input
+              id="password"
+              type="password"
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              required={!user}
+              placeholder={user ? "Biarkan kosong jika tidak ingin mengubah" : "Minimal 6 karakter"}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              {user
+                ? 'Isi hanya jika ingin mengubah password pengguna'
+                : 'Password ini akan digunakan untuk semua pegawai yang dipilih'}
+            </p>
+          </div>
+
           {!user && (
             <>
-              <div>
-                <Label htmlFor="password">Password *</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  required
-                  placeholder="Minimal 6 karakter"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Password ini akan digunakan untuk semua pegawai yang dipilih
-                </p>
-              </div>
-              
               <div>
                 <Label htmlFor="employee_ids">Pilih Pegawai *</Label>
                 <div className="border rounded-md p-3 max-h-60 overflow-y-auto space-y-2">
@@ -350,13 +352,13 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
               </div>
             </>
           )}
-          
+
           {error && (
             <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
               {error}
             </div>
           )}
-          
+
           {tempPassword && (
             <div className="p-3 text-sm text-green-600 bg-green-50 border border-green-200 rounded-md">
               Password sementara: <strong>{tempPassword}</strong>
@@ -364,7 +366,7 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
               <small>Simpan password ini dan bagikan kepada pengguna.</small>
             </div>
           )}
-          
+
           <div className="flex gap-2">
             <Button type="button" variant="outline" onClick={onClose} className="flex-1">
               Batal

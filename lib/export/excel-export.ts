@@ -59,32 +59,64 @@ export async function exportToExcel(options: ReportExportOptions): Promise<Buffe
 
     case 'kpi-achievement': {
       sheetName = 'KPI Achievement'
-      const indexData = data.filter((d: any) => !d.is_activity)
-      const activityData = data.filter((d: any) => d.is_activity)
 
-      wsData = [
-        ['--- KATEGORI BERBASIS INDEKS ---'],
-        ['Nama Pegawai / Unit', 'Kategori', 'Indikator', 'Target', 'Realisasi', 'Capaian (%)', 'Nilai', 'Selisih (Gap)'],
-        ...indexData.map((row: any) => [
-          row.employee_name || row.unit_name || '-',
-          row.category,
-          row.indicator_name,
-          row.target_value,
-          row.realization_value,
-          row.achievement_percentage,
-          row.score,
-          row.gap
-        ]),
-        [],
-        ['--- KATEGORI BERBASIS AKTIVITAS ---'],
-        ['Nama Pegawai / Unit', 'Kategori', 'Indikator', 'Volume / Realisasi'],
-        ...activityData.map((row: any) => [
-          row.employee_name || row.unit_name || '-',
-          row.category,
-          row.indicator_name,
-          row.realization_value
-        ]),
-      ]
+      const employeesData: Record<string, typeof data> = {}
+      for (const r of data) {
+        const empName = r.employee_name || 'Tidak Diketahui'
+        if (!employeesData[empName]) employeesData[empName] = []
+        employeesData[empName].push(r)
+      }
+
+      const employeeNames = Object.keys(employeesData).sort()
+
+      for (let eIdx = 0; eIdx < employeeNames.length; eIdx++) {
+        const empName = employeeNames[eIdx]
+        const empData = employeesData[empName]
+
+        if (eIdx > 0) {
+          wsData.push([''])
+          wsData.push(['--------------------------------------------------------------------------------'])
+          wsData.push([''])
+        }
+
+        wsData.push([`Pegawai: ${empName}  |  Unit: ${empData[0]?.unit_name || '-'}`])
+        wsData.push([''])
+
+        const indexData = empData.filter((d: any) => !d.is_activity)
+        const activityData = empData.filter((d: any) => d.is_activity)
+
+        if (indexData.length > 0) {
+          wsData.push(['--- KATEGORI BERBASIS INDEKS ---'])
+          wsData.push(['No', 'Kategori', 'Indikator', 'Target', 'Realisasi', 'Capaian (%)', 'Nilai', 'Selisih (Gap)'])
+          indexData.forEach((row: any, i: number) => {
+            wsData.push([
+              i + 1,
+              row.category,
+              row.indicator_name,
+              row.target_value,
+              row.realization_value,
+              row.achievement_percentage,
+              row.score,
+              row.gap
+            ])
+          })
+          wsData.push([''])
+        }
+
+        if (activityData.length > 0) {
+          wsData.push(['--- KATEGORI BERBASIS AKTIVITAS ---'])
+          wsData.push(['No', 'Kategori', 'Indikator', 'Volume / Realisasi'])
+          activityData.forEach((row: any, i: number) => {
+            wsData.push([
+              i + 1,
+              row.category,
+              row.indicator_name,
+              row.realization_value
+            ])
+          })
+          wsData.push([''])
+        }
+      }
       break
     }
 
@@ -137,7 +169,7 @@ export async function exportToExcel(options: ReportExportOptions): Promise<Buffe
     const cellValue = ws[firstCellAddress]?.v
 
     // Header Style
-    if (cellValue === 'Nama Pegawai / Unit' || cellValue === 'NIP/NIK' || cellValue === 'Unit Name') {
+    if (cellValue === 'Nama Pegawai / Unit' || cellValue === 'NIP/NIK' || cellValue === 'Unit Name' || cellValue === 'No') {
       for (let c = range.s.c; c <= range.e.c; c++) {
         const cellAddr = XLSX.utils.encode_cell({ r, c })
         if (ws[cellAddr]) {
@@ -146,6 +178,13 @@ export async function exportToExcel(options: ReportExportOptions): Promise<Buffe
             fill: { fgColor: { rgb: '2563EB' } }, // Professional Blue
           }
         }
+      }
+    }
+
+    // Employee name header style
+    if (typeof cellValue === 'string' && cellValue.startsWith('Pegawai:')) {
+      ws[firstCellAddress].s = {
+        font: { bold: true, sz: 12, color: { rgb: "1E3A5F" } },
       }
     }
 

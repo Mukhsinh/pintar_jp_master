@@ -50,15 +50,30 @@ export default function KPIConfigPage() {
   const [selectedIndicator, setSelectedIndicator] = useState<KPIIndicator | null>(null)
   const [selectedSubIndicator, setSelectedSubIndicator] = useState<KPISubIndicator | null>(null)
   const [selectedIndicatorForSub, setSelectedIndicatorForSub] = useState<KPIIndicator | null>(null)
+  const [userMetadata, setUserMetadata] = useState<{ role?: string; unit_id?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
 
   const selectedUnitData = units.find(u => u.id === selectedUnit)
   const isMedicalUnit = checkMedicalUnit(selectedUnitData?.id, selectedUnitData?.name)
+  const isSuperAdmin = userMetadata?.role === 'superadmin'
+  const isUnitManager = userMetadata?.role === 'unit_manager'
+  const isReadOnly = isUnitManager
 
   // Ensure component is mounted before loading data
   useEffect(() => {
     setMounted(true)
+    const fetchUser = async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setUserMetadata({
+          role: user.user_metadata?.role,
+          unit_id: user.user_metadata?.unit_id
+        })
+      }
+    }
+    fetchUser()
   }, [])
 
   const loadUnits = useCallback(async () => {
@@ -71,9 +86,16 @@ export default function KPIConfigPage() {
         .order('code')
 
       if (error) throw error
-      setUnits(data || [])
-      if (data && data.length > 0 && !selectedUnit) {
-        setSelectedUnit(data[0].id)
+
+      // Filter units if user is unit_manager
+      let filteredUnits = data || []
+      if (userMetadata?.role === 'unit_manager' && userMetadata.unit_id) {
+        filteredUnits = filteredUnits.filter(u => u.id === userMetadata.unit_id)
+      }
+
+      setUnits(filteredUnits)
+      if (filteredUnits.length > 0 && (!selectedUnit || !filteredUnits.find(u => u.id === selectedUnit))) {
+        setSelectedUnit(filteredUnits[0].id)
       }
     } catch (error: any) {
       console.error('Error loading units:', error)
@@ -81,7 +103,7 @@ export default function KPIConfigPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [selectedUnit])
+  }, [selectedUnit, userMetadata])
 
   const loadKPIStructure = useCallback(async () => {
     if (!selectedUnit) return
@@ -139,7 +161,7 @@ export default function KPIConfigPage() {
   }, [selectedUnit])
 
   useEffect(() => {
-    if (!mounted) return
+    if (!mounted || userMetadata === null) return
 
     setError(null)
     loadUnits().catch((err) => {
@@ -147,7 +169,7 @@ export default function KPIConfigPage() {
       setError('Gagal memuat data unit. Silakan refresh halaman.')
       setIsLoading(false)
     })
-  }, [mounted])
+  }, [mounted, userMetadata, loadUnits])
 
   useEffect(() => {
     if (!mounted || !selectedUnit) return
@@ -376,60 +398,96 @@ export default function KPIConfigPage() {
             </DropdownMenu>
           )}
 
-          <Button
-            onClick={handleCopyStructure}
-            className="bg-cyan-500 hover:bg-cyan-600 text-white shadow-md hover:shadow-lg transition-all"
-          >
-            <Copy className="h-4 w-4 mr-2" />
-            Salin Struktur
-          </Button>
-          <Button
-            onClick={handleAddCategory}
-            className="bg-emerald-500 hover:bg-emerald-600 text-white shadow-md hover:shadow-lg transition-all"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Tambah Kategori
-          </Button>
+          {!isReadOnly && (
+            <>
+              <Button
+                onClick={handleCopyStructure}
+                className="bg-cyan-500 hover:bg-cyan-600 text-white shadow-md hover:shadow-lg transition-all"
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Salin Struktur
+              </Button>
+              <Button
+                onClick={handleAddCategory}
+                className="bg-emerald-500 hover:bg-emerald-600 text-white shadow-md hover:shadow-lg transition-all"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Tambah Kategori
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Unit Selector */}
-      <Card className="border-2 border-blue-100 shadow-lg">
-        <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100">
-          <CardTitle className="flex items-center gap-2 text-blue-900">
-            <Building2 className="h-5 w-5" />
-            <span className="text-xl">Pilih Unit</span>
-            <span className="text-sm font-normal text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
-              {units.length} unit
-            </span>
-          </CardTitle>
-          <CardDescription className="text-blue-700">Pilih unit untuk melihat dan mengkonfigurasi struktur KPI</CardDescription>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <Select value={selectedUnit || undefined} onValueChange={setSelectedUnit}>
-            <SelectTrigger className="w-full h-14 text-base font-medium border-2 border-blue-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 bg-white hover:bg-blue-50 hover:border-blue-300 transition-all shadow-sm">
-              <SelectValue placeholder="Pilih unit..." />
-            </SelectTrigger>
-            <SelectContent className="max-h-80">
-              {units.map(unit => (
-                <SelectItem
-                  key={unit.id}
-                  value={unit.id}
-                  className="text-base py-3 cursor-pointer hover:bg-blue-50 focus:bg-blue-100"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="font-bold text-blue-600 bg-blue-100 px-2 py-1 rounded">{unit.code}</span>
-                    <span className="text-gray-700">{unit.name}</span>
-                    {checkMedicalUnit(unit.id, unit.name) && (
-                      <Badge variant="secondary" className="text-[10px] bg-rose-50 text-rose-700 border-rose-200 px-1">Medis</Badge>
+      {/* Unit Selector - only visible for superadmin */}
+      {isSuperAdmin ? (
+        <Card className="border-2 border-blue-100 shadow-lg">
+          <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100">
+            <CardTitle className="flex items-center gap-2 text-blue-900">
+              <Building2 className="h-5 w-5" />
+              <span className="text-xl">Pilih Unit</span>
+              <span className="text-sm font-normal text-blue-600 bg-blue-100 px-2 py-1 rounded-full">
+                {units.length} unit
+              </span>
+            </CardTitle>
+            <CardDescription className="text-blue-700">Pilih unit untuk melihat dan mengkonfigurasi struktur KPI</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <Select value={selectedUnit || undefined} onValueChange={setSelectedUnit}>
+              <SelectTrigger className="w-full h-14 text-base font-medium border-2 border-blue-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 bg-white hover:bg-blue-50 hover:border-blue-300 transition-all shadow-sm">
+                <SelectValue placeholder="Pilih unit..." />
+              </SelectTrigger>
+              <SelectContent className="max-h-80">
+                {units.map(unit => (
+                  <SelectItem
+                    key={unit.id}
+                    value={unit.id}
+                    className="text-base py-3 cursor-pointer hover:bg-blue-50 focus:bg-blue-100"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="font-bold text-blue-600 bg-blue-100 px-2 py-1 rounded">{unit.code}</span>
+                      <span className="text-gray-700">{unit.name}</span>
+                      {checkMedicalUnit(unit.id, unit.name) && (
+                        <Badge variant="secondary" className="text-[10px] bg-rose-50 text-rose-700 border-rose-200 px-1">Medis</Badge>
+                      )}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+      ) : (
+        /* For Unit Manager, show their unit information clearly but without selector */
+        selectedUnitData && (
+          <Card className="border-l-4 border-blue-600 shadow-md">
+            <CardContent className="py-4 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-blue-50 rounded-full text-blue-600">
+                  <Building2 className="h-6 w-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">{selectedUnitData.name}</h2>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Badge variant="outline" className="text-blue-700 border-blue-200 bg-blue-50 font-bold">
+                      {selectedUnitData.code}
+                    </Badge>
+                    {isMedicalUnit && (
+                      <Badge className="bg-rose-100 text-rose-700 border-rose-200 hover:bg-rose-100">
+                        Unit Medis
+                      </Badge>
                     )}
                   </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </CardContent>
-      </Card>
+                </div>
+              </div>
+              <div className="text-right hidden md:block">
+                <p className="text-sm font-medium text-gray-500">Mode Akses</p>
+                <p className="text-base font-bold text-blue-700">Manager Unit</p>
+              </div>
+            </CardContent>
+          </Card>
+        )
+      )}
 
       {/* KPI Tree */}
       {selectedUnit && (
@@ -460,6 +518,7 @@ export default function KPIConfigPage() {
                 onAddSubIndicator={handleAddSubIndicator}
                 onEditSubIndicator={handleEditSubIndicator}
                 onDeleteSubIndicator={handleDeleteSubIndicator}
+                isReadOnly={isReadOnly}
               />
             )}
           </CardContent>

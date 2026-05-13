@@ -69,24 +69,17 @@ const rolePermissions: Record<Role, Permission[]> = {
     'profile:update',
   ],
   unit_manager: [
+    'kpi:read',
     'realization:read',
     'realization:create',
     'realization:update',
     'assessment:read',
     'assessment:create',
     'assessment:update',
-    'calculation:view',
-    'reports:view',
-    'reports:export',
     'profile:read',
     'profile:update',
   ],
-  employee: [
-    'calculation:view',
-    'reports:view',
-    'profile:read',
-    'profile:update',
-  ],
+  employee: [],
 }
 
 // Define route permissions
@@ -103,7 +96,7 @@ export const routePermissions: RoutePermission[] = [
     permissions: ['profile:read'],
     roles: ['superadmin', 'unit_manager', 'employee'],
   },
-  
+
   // Superadmin only routes
   {
     path: '/users',
@@ -123,6 +116,26 @@ export const routePermissions: RoutePermission[] = [
   {
     path: '/kpi-config',
     permissions: ['kpi:read'],
+    roles: ['superadmin', 'unit_manager'],
+  },
+  {
+    path: '/realization',
+    permissions: ['realization:read'],
+    roles: ['superadmin', 'unit_manager'],
+  },
+  {
+    path: '/assessment',
+    permissions: ['assessment:read'],
+    roles: ['superadmin', 'unit_manager'],
+  },
+  {
+    path: '/reports',
+    permissions: ['reports:view'],
+    roles: ['superadmin', 'unit_manager'],
+  },
+  {
+    path: '/audit',
+    permissions: ['audit:read'],
     roles: ['superadmin'],
   },
   {
@@ -135,30 +148,6 @@ export const routePermissions: RoutePermission[] = [
     permissions: ['settings:read'],
     roles: ['superadmin'],
   },
-  {
-    path: '/audit',
-    permissions: ['audit:read'],
-    roles: ['superadmin'],
-  },
-  {
-    path: '/reports',
-    permissions: ['reports:view'],
-    roles: ['superadmin'],
-  },
-
-  // Manager routes
-  {
-    path: '/realization',
-    permissions: ['realization:read', 'realization:create'],
-    roles: ['unit_manager'],
-  },
-  {
-    path: '/assessment',
-    permissions: ['assessment:read', 'assessment:create'],
-    roles: ['superadmin', 'unit_manager'],
-  },
-
-  // Shared routes
   {
     path: '/profile',
     permissions: ['profile:read'],

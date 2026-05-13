@@ -300,100 +300,124 @@ export async function generateSummaryReportPDF(
   let body = []
 
   if (reportType === 'kpi-achievement') {
-    const indexResults = results.filter(r => !r.is_activity)
-    const activityResults = results.filter(r => r.is_activity)
-
-    let currentY = 60
-
-    if (results.length > 0) {
-      const employeeName = results[0].employee_name || results[0].unit_name || '-';
-      doc.setFontSize(10);
-      doc.text(`Pegawai: ${employeeName}`, 15, 52);
+    // Group results by employee_name
+    const employeesData: Record<string, typeof results> = {}
+    for (const r of results) {
+      const empName = r.employee_name || 'Tidak Diketahui'
+      if (!employeesData[empName]) employeesData[empName] = []
+      employeesData[empName].push(r)
     }
 
-    // --- TABLE 1: KATEGORI BERBASIS INDEKS ---
-    if (indexResults.length > 0) {
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.text('--- KATEGORI BERBASIS INDEKS ---', 15, currentY);
-      currentY += 4;
+    const employeeNames = Object.keys(employeesData).sort()
 
-      autoTable(doc, {
-        startY: currentY,
-        head: [['No', 'Kategori', 'Indikator', 'Target', 'Realisasi', 'Capaian (%)', 'Nilai', 'Gap']],
-        body: indexResults.map((r, i) => [
-          i + 1,
-          r.category,
-          r.indicator_name,
-          r.target_value,
-          r.realization_value,
-          r.achievement_percentage,
-          r.score,
-          r.gap
-        ]),
-        theme: 'grid',
-        headStyles: { fillColor: [44, 62, 80], textColor: 255 },
-        styles: { fontSize: 8 },
-        didParseCell: function (data) {
-          if (data.section === 'body' && data.column.index === 7) {
-            const gapVal = parseFloat(data.cell.raw as string);
-            if (gapVal > 0) {
-              data.cell.styles.textColor = [34, 197, 94];
-              data.cell.styles.fontStyle = 'bold';
-            } else if (gapVal < 0) {
-              data.cell.styles.textColor = [239, 68, 68];
-              data.cell.styles.fontStyle = 'bold';
-            }
-          }
-        }
-      })
+    for (let eIdx = 0; eIdx < employeeNames.length; eIdx++) {
+      const empName = employeeNames[eIdx]
+      const empResults = employeesData[empName]
+      const empUnitName = empResults[0]?.unit_name || '-'
 
-      currentY = (doc as any).lastAutoTable.finalY + 10;
-
-      // Recap Table for Index Scores
-      let totalScore = 0;
-      for (const r of indexResults) {
-        totalScore += parseFloat(r.score || 0);
+      if (eIdx > 0) {
+        doc.addPage()
+        // Re-add Kop Surat and title on each page for bulk reports
+        await addKopSurat(doc, companyInfo)
+        doc.setFontSize(14)
+        doc.setFont('helvetica', 'bold')
+        doc.text(title, centerX, 42, { align: 'center' })
       }
 
+      const indexResults = empResults.filter(r => !r.is_activity)
+      const activityResults = empResults.filter(r => r.is_activity)
+
+      let currentY = 60
+
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
-      doc.text('Tabel Rekapitulasi Pencapaian (Indeks)', 15, currentY - 2);
+      doc.text(`Pegawai: ${empName}  |  Unit: ${empUnitName}`, 15, 52);
 
-      autoTable(doc, {
-        startY: currentY,
-        head: [['Komponen', 'Deskripsi', 'Total Nilai']],
-        body: [
-          ['Total Pencapaian', `Total Nilai dari Keseluruhan Indikator Berbasis Indeks`, totalScore.toFixed(2)],
-        ],
-        theme: 'grid',
-        headStyles: { fillColor: [44, 62, 80], textColor: 255 },
-        styles: { fontSize: 9 }
-      })
+      // --- TABLE 1: KATEGORI BERBASIS INDEKS ---
+      if (indexResults.length > 0) {
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text('--- KATEGORI BERBASIS INDEKS ---', 15, currentY);
+        currentY += 4;
 
-      currentY = (doc as any).lastAutoTable.finalY + 10;
-    }
+        autoTable(doc, {
+          startY: currentY,
+          head: [['No', 'Kategori', 'Indikator', 'Target', 'Realisasi', 'Capaian (%)', 'Nilai', 'Gap']],
+          body: indexResults.map((r, i) => [
+            i + 1,
+            r.category,
+            r.indicator_name,
+            r.target_value,
+            r.realization_value,
+            r.achievement_percentage,
+            r.score,
+            r.gap
+          ]),
+          theme: 'grid',
+          headStyles: { fillColor: [44, 62, 80], textColor: 255 },
+          styles: { fontSize: 8 },
+          didParseCell: function (data) {
+            if (data.section === 'body' && data.column.index === 7) {
+              const gapVal = parseFloat(data.cell.raw as string);
+              if (gapVal > 0) {
+                data.cell.styles.textColor = [34, 197, 94];
+                data.cell.styles.fontStyle = 'bold';
+              } else if (gapVal < 0) {
+                data.cell.styles.textColor = [239, 68, 68];
+                data.cell.styles.fontStyle = 'bold';
+              }
+            }
+          }
+        })
 
-    // --- TABLE 2: KATEGORI BERBASIS AKTIVITAS ---
-    if (activityResults.length > 0) {
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      doc.text('--- KATEGORI BERBASIS AKTIVITAS ---', 15, currentY);
-      currentY += 4;
+        currentY = (doc as any).lastAutoTable.finalY + 10;
 
-      autoTable(doc, {
-        startY: currentY,
-        head: [['No', 'Kategori', 'Indikator', 'Volume / Realisasi']],
-        body: activityResults.map((r, i) => [
-          i + 1,
-          r.category,
-          r.indicator_name,
-          r.realization_value
-        ]),
-        theme: 'grid',
-        headStyles: { fillColor: [44, 62, 80], textColor: 255 },
-        styles: { fontSize: 8 }
-      })
+        // Recap Table for Index Scores
+        let totalScore = 0;
+        for (const r of indexResults) {
+          totalScore += parseFloat(r.score || 0);
+        }
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Tabel Rekapitulasi Pencapaian (Indeks)', 15, currentY - 2);
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [['Komponen', 'Deskripsi', 'Total Nilai']],
+          body: [
+            ['Total Pencapaian', `Total Nilai dari Keseluruhan Indikator Berbasis Indeks`, totalScore.toFixed(2)],
+          ],
+          theme: 'grid',
+          headStyles: { fillColor: [44, 62, 80], textColor: 255 },
+          styles: { fontSize: 9 }
+        })
+
+        currentY = (doc as any).lastAutoTable.finalY + 10;
+      }
+
+      // --- TABLE 2: KATEGORI BERBASIS AKTIVITAS ---
+      if (activityResults.length > 0) {
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text('--- KATEGORI BERBASIS AKTIVITAS ---', 15, currentY);
+        currentY += 4;
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [['No', 'Kategori', 'Indikator', 'Volume / Realisasi']],
+          body: activityResults.map((r, i) => [
+            i + 1,
+            r.category,
+            r.indicator_name,
+            r.realization_value
+          ]),
+          theme: 'grid',
+          headStyles: { fillColor: [44, 62, 80], textColor: 255 },
+          styles: { fontSize: 8 }
+        })
+        currentY = (doc as any).lastAutoTable.finalY + 10;
+      }
     }
 
   } else if (reportType === 'unit-comparison') {

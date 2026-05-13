@@ -11,10 +11,10 @@ export const routeConfigs: RouteConfig[] = [
   // Dashboard - accessible by all roles
   {
     path: '/dashboard',
-    allowedRoles: ['superadmin', 'unit_manager', 'employee'],
+    allowedRoles: ['superadmin', 'unit_manager'],
     description: 'Dashboard (role-specific content)'
   },
-  
+
   // Superadmin only routes
   {
     path: '/units',
@@ -33,7 +33,7 @@ export const routeConfigs: RouteConfig[] = [
   },
   {
     path: '/kpi-config',
-    allowedRoles: ['superadmin'],
+    allowedRoles: ['superadmin', 'unit_manager'],
     description: 'KPI configuration'
   },
   {
@@ -43,7 +43,7 @@ export const routeConfigs: RouteConfig[] = [
   },
   {
     path: '/reports',
-    allowedRoles: ['superadmin'],
+    allowedRoles: ['superadmin', 'unit_manager'],
     description: 'Reports and analytics'
   },
   {
@@ -56,28 +56,22 @@ export const routeConfigs: RouteConfig[] = [
     allowedRoles: ['superadmin'],
     description: 'System settings'
   },
-  
-  // Manager routes
-  {
-    path: '/realization',
-    allowedRoles: ['unit_manager'],
-    description: 'KPI realization input'
-  },
+
   {
     path: '/assessment',
     allowedRoles: ['superadmin', 'unit_manager'],
     description: 'KPI assessment and evaluation'
   },
-  
+
   // Shared routes
   {
     path: '/profile',
-    allowedRoles: ['superadmin', 'unit_manager', 'employee'],
+    allowedRoles: ['superadmin', 'unit_manager'],
     description: 'User profile'
   },
   {
     path: '/notifications',
-    allowedRoles: ['superadmin', 'unit_manager', 'employee'],
+    allowedRoles: ['superadmin', 'unit_manager'],
     description: 'Notifications'
   }
 ]
@@ -95,9 +89,6 @@ export const legacyRoutes: Record<string, string> = {
   '/admin/reports': '/reports',
   '/admin/audit': '/audit',
   '/admin/settings': '/settings',
-  '/manager/realization': '/realization',
-  '/manager/reports': '/reports',
-  '/employee/reports': '/reports',
 }
 
 /**
@@ -108,7 +99,7 @@ export function findRouteConfig(pathname: string): RouteConfig | undefined {
   // Find exact match first
   let config = routeConfigs.find(rc => pathname === rc.path)
   if (config) return config
-  
+
   // Find prefix match (for nested routes like /units/123)
   config = routeConfigs.find(rc => pathname.startsWith(rc.path + '/'))
   return config
@@ -119,10 +110,10 @@ export function findRouteConfig(pathname: string): RouteConfig | undefined {
  */
 export function isRouteAllowed(pathname: string, role: Role): boolean {
   const config = findRouteConfig(pathname)
-  
+
   // If route is not defined in config, allow access (default behavior)
   if (!config) return true
-  
+
   return config.allowedRoles.includes(role)
 }
 

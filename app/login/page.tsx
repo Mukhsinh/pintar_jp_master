@@ -172,6 +172,15 @@ export default function LoginPage() {
         return
       }
 
+      // Post-login: sync role from auth metadata to m_employees table
+      // This repairs any previously broken role changes using server-side admin client
+      try {
+        await fetch('/api/users/sync-role', { method: 'POST' })
+      } catch (syncErr) {
+        console.warn('[LOGIN] Role sync warning:', syncErr)
+        // Non-blocking: continue to dashboard even if sync fails
+      }
+
       window.location.href = '/dashboard'
     } catch (err: any) {
       setError('Terjadi kesalahan sistem, silakan coba lagi')

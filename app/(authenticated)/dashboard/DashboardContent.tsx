@@ -62,38 +62,44 @@ export async function DashboardContent({
     let kpiDistribution: any[] = []
     let recentActivities: any[] = []
 
-    if (employee.role === 'superadmin') {
-      try {
-        const { data: unitsData } = await supabase.from('m_units').select('id, name').order('name')
-        units = unitsData || []
+    // Determine which unit ID to use for stats
+    const effectiveUnitId = employee.role === 'unit_manager' ? employee.unit_id : unitId
 
-        // OPTIMIZED: Parallel data loading for dashboard
+    if (employee.role === 'superadmin' || employee.role === 'unit_manager') {
+      try {
+        if (employee.role === 'superadmin') {
+          const { data: unitsData } = await supabase.from('m_units').select('id, name').order('name')
+          units = unitsData || []
+        }
+
+        // Parallel data loading for dashboard
         const [
           dashboardStats,
           topPerformersData,
           worstPerformersData,
-          unitPerformanceData,
           performanceTrendData,
           kpiDistributionData,
         ] = await Promise.allSettled([
-          DashboardService.getSuperadminStats(unitId, period, year),
-          DashboardService.getTopPerformers(5, unitId, period, year),
-          DashboardService.getWorstPerformers(5, unitId, period, year),
-          DashboardService.getUnitPerformance(period, year),
-          DashboardService.getPerformanceTrend(6, unitId, period, year),
-          DashboardService.getKPIDistribution(unitId, period, year)
+          DashboardService.getSuperadminStats(effectiveUnitId, period, year),
+          DashboardService.getTopPerformers(5, effectiveUnitId, period, year),
+          DashboardService.getWorstPerformers(5, effectiveUnitId, period, year),
+          DashboardService.getPerformanceTrend(6, effectiveUnitId, period, year),
+          DashboardService.getKPIDistribution(effectiveUnitId, period, year)
         ])
 
         // Process results with fallbacks
-        stats = dashboardStats.status === 'fulfilled' ? dashboardStats.value : await DashboardService.getSuperadminStats(unitId, period, year)
+        stats = dashboardStats.status === 'fulfilled' ? dashboardStats.value : await DashboardService.getSuperadminStats(effectiveUnitId, period, year)
         topPerformers = topPerformersData.status === 'fulfilled' ? topPerformersData.value : []
         worstPerformers = worstPerformersData.status === 'fulfilled' ? worstPerformersData.value : []
-        unitPerformance = unitPerformanceData.status === 'fulfilled' ? unitPerformanceData.value : []
         performanceTrend = performanceTrendData.status === 'fulfilled' ? performanceTrendData.value : []
         kpiDistribution = kpiDistributionData.status === 'fulfilled' ? kpiDistributionData.value : []
+
+        if (employee.role === 'superadmin') {
+          const unitPerformanceRes = await DashboardService.getUnitPerformance(period, year)
+          unitPerformance = unitPerformanceRes
+        }
       } catch (serviceError) {
         console.error('Dashboard service error:', serviceError)
-        // Set default values if service fails
         stats = {
           totalEmployees: 0,
           totalUnits: 0,
@@ -186,26 +192,55 @@ export async function DashboardContent({
 
         {employee.role === 'unit_manager' && (
           <>
+            <DashboardFilters
+              showUnitFilter={false}
+              showPeriodFilter={true}
+              showExport={true}
+            />
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <StatCard
                 title="Pegawai Unit"
-                value="0"
+                value={stats.totalEmployees}
                 description="Total pegawai di unit Anda"
                 iconName="Users"
+                trend={{ value: stats.trends.employees, isPositive: true }}
               />
               <StatCard
-                title="Realisasi Bulan Ini"
-                value="0%"
-                description="Progress input realisasi"
-                iconName="Target"
+                title="Tingkat Penyelesaian"
+                value={`${stats.completionRate.toFixed(1)}%`}
+                description="Penilaian selesai"
+                iconName="CheckCircle"
+                trend={{ value: stats.trends.completion, isPositive: true }}
               />
               <StatCard
                 title="Skor Rata-rata Unit"
-                value="0"
+                value={stats.avgScore.toFixed(2)}
                 description="Performa unit Anda"
                 iconName="Award"
+                trend={{ value: stats.trends.score, isPositive: true }}
               />
             </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <PerformanceChart
+                data={performanceTrend}
+                type="bar"
+                title="Tren Performa Unit"
+                description="Performa 6 bulan terakhir"
+              />
+              <KPIDistributionChart data={kpiDistribution} />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-1">
+                <TopPerformers performers={topPerformers} />
+              </div>
+              <div className="lg:col-span-1">
+                <WorstPerformers performers={worstPerformers} />
+              </div>
+            </div>
+
             <QuickActions role="unit_manager" />
           </>
         )}

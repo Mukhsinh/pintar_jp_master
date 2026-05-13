@@ -1,29 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url)
         const type = searchParams.get('type')
 
+        const supabaseClient = await createClient()
+        const { data: { user } } = await supabaseClient.auth.getUser()
+
+        if (!user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
+
         const supabase = await createAdminClient()
 
+        // Get user employee info
+        const { data: employee } = await supabase
+            .from('m_employees')
+            .select('id, role, unit_id')
+            .eq('user_id', user.id)
+            .single()
+
+        if (!employee) {
+            return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+        }
+
         if (type === 'units') {
-            const { data, error } = await supabase
+            let query = supabase
                 .from('m_units')
                 .select('id, name')
+                .eq('is_active', true)
                 .order('name')
+
+            if (employee.role === 'unit_manager') {
+                query = query.eq('id', employee.unit_id)
+            }
+
+            const { data, error } = await query
 
             if (error) throw error
             return NextResponse.json({ success: true, data })
         }
 
         if (type === 'employees') {
-            const { data, error } = await supabase
+            let query = supabase
                 .from('m_employees')
-                .select('id, full_name, unit_id')
+                .select('id, full_name, unit_id, employee_code')
                 .eq('is_active', true)
                 .order('full_name')
+
+            if (employee.role === 'unit_manager') {
+                query = query.eq('unit_id', employee.unit_id)
+            }
+
+            const { data, error } = await query
 
             if (error) throw error
             return NextResponse.json({ success: true, data })

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { isMedicalUnit } from '@/lib/utils/medical-unit'
 import * as fs from 'fs'
 
@@ -114,7 +114,7 @@ async function savePIRHistory(
  */
 export async function POST(request: NextRequest) {
   try {
-    const { reportType, period, unitId, employeeId, detailLevel } = await request.json()
+    const { reportType, period, unitId: reqUnitId, employeeId, detailLevel } = await request.json()
 
     if (!reportType || !period) {
       return NextResponse.json(
@@ -123,7 +123,35 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const supabaseClient = await createClient()
+    const { data: { user } } = await supabaseClient.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const supabase = await createAdminClient()
+
+    // Get user employee info for RBAC
+    const { data: employee } = await supabase
+      .from('m_employees')
+      .select('role, unit_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!employee) {
+      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+    }
+
+    // Role-based restrictions
+    let unitId = reqUnitId
+    if (employee.role === 'unit_manager') {
+      // Force unit manager to their own unit
+      unitId = employee.unit_id
+      if (reportType === 'unit-comparison') {
+        return NextResponse.json({ error: 'Akses ditolak: Manajer unit tidak dapat mengakses laporan perbandingan unit.' }, { status: 403 })
+      }
+    }
 
     let data: any[] = []
 
@@ -550,13 +578,19 @@ async function generateKPIAchievementReport(supabase: any, period: string, unitI
     .eq('period', period)
 
   if (unitId || employeeId) {
+    // If employeeId is specified, we prioritize it as it is more specific.
+    // We only use unitId if employeeId is not provided or 'all'.
+    const matchCriteria: any = {}
+    if (employeeId && employeeId !== 'all') {
+      matchCriteria.id = employeeId
+    } else if (unitId && unitId !== 'all') {
+      matchCriteria.unit_id = unitId
+    }
+
     const { data: emps } = await supabase
       .from('m_employees')
       .select('id')
-      .match({
-        ...(unitId && unitId !== 'all' && { unit_id: unitId }),
-        ...(employeeId && employeeId !== 'all' && { id: employeeId })
-      })
+      .match(matchCriteria)
 
     const empIds = emps?.map((e: any) => e.id) || []
     if (empIds.length > 0) {
@@ -578,10 +612,8 @@ async function generateKPIAchievementReport(supabase: any, period: string, unitI
     const indicatorId = row.m_kpi_indicators.id
     const empId = row.employee_id
 
-    // Group by employee if detailed or employee elected
-    const key = (detailLevel === 'detail' || (employeeId && employeeId !== 'all'))
-      ? `${indicatorId}_${empId}`
-      : indicatorId;
+    // Group by employee AND indicator so we get individual reports in bulk
+    const key = `${indicatorId}_${empId}`
 
     const existing = mergedData.get(key)
     const empRecord = Array.isArray(row.m_employees) ? row.m_employees[0] : row.m_employees

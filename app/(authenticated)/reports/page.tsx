@@ -255,17 +255,36 @@ export default function ReportsPage() {
   const [error, setError] = useState<string | null>(null)
   const [isMounted, setIsMounted] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [userProfile, setUserProfile] = useState<any>(null)
 
   useEffect(() => {
     setIsMounted(true)
     const fetchMetadata = async () => {
-      const [unitsRes, empRes] = await Promise.all([
-        fetch('/api/reports/generate/metadata?type=units'),
-        fetch('/api/reports/generate/metadata?type=employees'),
-      ])
-      const [units, employees] = await Promise.all([unitsRes.json(), empRes.json()])
-      setAvailableUnits(units.data || [])
-      setAvailableEmployees(employees.data || [])
+      try {
+        const [unitsRes, empRes, profileRes] = await Promise.all([
+          fetch('/api/reports/generate/metadata?type=units'),
+          fetch('/api/reports/generate/metadata?type=employees'),
+          fetch('/api/profile'),
+        ])
+        const [units, employees, profile] = await Promise.all([
+          unitsRes.json(),
+          empRes.json(),
+          profileRes.json()
+        ])
+
+        setAvailableUnits(units.data || [])
+        setAvailableEmployees(employees.data || [])
+
+        if (profile.success) {
+          setUserProfile(profile.data)
+          // If unit manager, auto-select their unit
+          if (profile.data.role === 'unit_manager' && profile.data.unit_id) {
+            setSelectedUnit(profile.data.unit_id)
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching metadata:', err)
+      }
     }
     fetchMetadata()
   }, [])
@@ -380,18 +399,20 @@ export default function ReportsPage() {
 
       {/* Report Type Selection */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {REPORT_TYPES.map(report => (
-          <ReportTypeCard
-            key={report.id}
-            report={report}
-            selected={selectedReport === report.id}
-            onClick={() => {
-              setSelectedReport(report.id)
-              setReportData(null)
-              setError(null)
-            }}
-          />
-        ))}
+        {REPORT_TYPES
+          .filter(report => !(userProfile?.role === 'unit_manager' && report.id === 'unit-comparison'))
+          .map(report => (
+            <ReportTypeCard
+              key={report.id}
+              report={report}
+              selected={selectedReport === report.id}
+              onClick={() => {
+                setSelectedReport(report.id)
+                setReportData(null)
+                setError(null)
+              }}
+            />
+          ))}
       </div>
 
       {/* Filters & Actions */}
@@ -416,12 +437,13 @@ export default function ReportsPage() {
                   <Select
                     value={selectedUnit}
                     onValueChange={v => { setSelectedUnit(v); setSelectedEmployee('all') }}
+                    disabled={userProfile?.role === 'unit_manager'}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Pilih unit" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Semua Unit</SelectItem>
+                      {userProfile?.role !== 'unit_manager' && <SelectItem value="all">Semua Unit</SelectItem>}
                       {availableUnits.map(u => (
                         <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
                       ))}
