@@ -167,7 +167,14 @@ export default function Sidebar() {
 
   useEffect(() => {
     if (mounted) {
-      try { localStorage.setItem('sidebar-collapsed', JSON.stringify(isCollapsed)) } catch { }
+      try {
+        localStorage.setItem('sidebar-collapsed', JSON.stringify(isCollapsed))
+        // Update CSS variable for layout
+        document.documentElement.style.setProperty(
+          '--sidebar-width',
+          isCollapsed ? '80px' : '288px'
+        )
+      } catch { }
     }
   }, [isCollapsed, mounted])
 

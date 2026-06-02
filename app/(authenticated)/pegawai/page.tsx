@@ -43,10 +43,10 @@ export default function PegawaiPage() {
   const [totalCount, setTotalCount] = useState(0)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [selectedPegawai, setSelectedPegawai] = useState<Pegawai | null>(null)
-  
+
   const pageSize = 50
   const totalPages = Math.ceil(totalCount / pageSize)
-  
+
   // Debounce search term to reduce API calls
   const debouncedSearchTerm = useDebounce(searchTerm, 500)
 
@@ -65,9 +65,9 @@ export default function PegawaiPage() {
     try {
       setLoading(true)
       setError(null)
-      
+
       const result = await getPegawaiWithUnits(currentPage, pageSize, debouncedSearchTerm)
-      
+
       if (result.error) {
         // Handle authentication errors
         if (result.error.includes('terautentikasi') || result.error.includes('akses')) {
@@ -170,27 +170,27 @@ export default function PegawaiPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="p-4 md:p-6 space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Master Pegawai</h1>
-          <p className="text-gray-500">Kelola data pegawai organisasi</p>
+          <h1 className="text-2xl md:text-3xl font-bold">Master Pegawai</h1>
+          <p className="text-sm text-gray-500">Kelola data pegawai organisasi</p>
         </div>
-        <div className="flex gap-2">
-          <Button 
+        <div className="grid grid-cols-2 md:flex md:flex-wrap lg:flex-nowrap gap-2 w-full sm:w-auto">
+          <Button
             onClick={handleDownloadTemplate}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs md:text-sm px-2 md:px-4"
           >
-            <Plus className="h-4 w-4 mr-2" />
-            Unduh Template
+            <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+            Template
           </Button>
-          
-          <Button 
+
+          <Button
             onClick={() => document.getElementById('import-pegawai')?.click()}
-            className="bg-amber-600 hover:bg-amber-700 text-white"
+            className="bg-amber-600 hover:bg-amber-700 text-white text-xs md:text-sm px-2 md:px-4"
           >
-            <Plus className="h-4 w-4 mr-2" />
-            Import Data
+            <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+            Import
           </Button>
           <input
             id="import-pegawai"
@@ -199,30 +199,33 @@ export default function PegawaiPage() {
             onChange={handleImport}
             className="hidden"
           />
-          
-          <Button 
+
+          <Button
             onClick={() => handleDownloadReport('excel')}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-blue-600 hover:bg-blue-700 text-white text-xs md:text-sm px-2 md:px-4"
           >
-            <Plus className="h-4 w-4 mr-2" />
-            Unduh Excel
+            <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+            Excel
           </Button>
-          
-          <Button 
+
+          <Button
             onClick={() => handleDownloadReport('pdf')}
-            className="bg-rose-600 hover:bg-rose-700 text-white"
+            className="bg-rose-600 hover:bg-rose-700 text-white text-xs md:text-sm px-2 md:px-4"
           >
-            <Plus className="h-4 w-4 mr-2" />
-            Unduh PDF
+            <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+            PDF
           </Button>
-          
-          <Button onClick={() => setShowCreateDialog(true)}>
-            <Plus className="h-4 w-4 mr-2" />
+
+          <Button
+            onClick={() => setShowCreateDialog(true)}
+            className="col-span-2 md:col-span-1 text-xs md:text-sm"
+          >
+            <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
             Tambah Pegawai
           </Button>
         </div>
       </div>
-      
+
       <Card>
         <CardHeader>
           <CardTitle>Daftar Pegawai</CardTitle>
@@ -236,7 +239,7 @@ export default function PegawaiPage() {
               <p className="text-red-800 text-sm">{error}</p>
             </div>
           )}
-          
+
           <div className="mb-4 flex gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -261,14 +264,14 @@ export default function PegawaiPage() {
               Muat Ulang
             </Button>
           </div>
-          
+
           <PegawaiTable
             pegawai={pegawai}
             loading={loading}
             onEdit={handleEdit}
             onRefresh={loadPegawai}
           />
-          
+
           {totalPages > 1 && (
             <div className="flex justify-center gap-2 mt-4">
               <Button
@@ -292,7 +295,7 @@ export default function PegawaiPage() {
           )}
         </CardContent>
       </Card>
-      
+
       <PegawaiFormDialog
         open={showCreateDialog}
         onClose={handleCloseDialog}

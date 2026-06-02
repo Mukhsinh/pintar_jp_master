@@ -113,51 +113,50 @@ export const UnitTable = memo(function UnitTable({ units }: UnitTableProps) {
 
   return (
     <>
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           <Button
             onClick={handleDownloadTemplate}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9"
           >
-            <Download className="mr-2 h-4 w-4" />
-            Unduh Template
+            <Download className="mr-1.5 h-3.5 w-3.5" />
+            Template
           </Button>
 
           <Button
             onClick={() => document.getElementById('import-units')?.click()}
-            className="bg-amber-600 hover:bg-amber-700 text-white"
+            className="flex-1 sm:flex-none bg-amber-600 hover:bg-amber-700 text-white text-xs h-9"
           >
-            <Upload className="mr-2 h-4 w-4" />
-            Import Data
-          </Button>
-          <input
-            id="import-units"
-            type="file"
-            accept=".xlsx,.xls"
-            onChange={handleImport}
-            className="hidden"
-          />
-
-          <Button
-            onClick={() => handleDownloadReport('excel')}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            <FileSpreadsheet className="mr-2 h-4 w-4" />
-            Unduh Excel
+            <Upload className="mr-1.5 h-3.5 w-3.5" />
+            Import
           </Button>
 
-          <Button
-            onClick={() => handleDownloadReport('pdf')}
-            className="bg-red-600 hover:bg-red-700 text-white"
-          >
-            <FileText className="mr-2 h-4 w-4" />
-            Unduh PDF
-          </Button>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <Button
+              onClick={() => handleDownloadReport('excel')}
+              variant="outline"
+              size="sm"
+              className="flex-1 sm:flex-none h-9"
+            >
+              <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5 text-green-600" />
+              Excel
+            </Button>
+
+            <Button
+              onClick={() => handleDownloadReport('pdf')}
+              variant="outline"
+              size="sm"
+              className="flex-1 sm:flex-none h-9"
+            >
+              <FileText className="mr-1.5 h-3.5 w-3.5 text-red-600" />
+              PDF
+            </Button>
+          </div>
         </div>
 
         <Button
           onClick={handleAdd}
-          className="bg-blue-600 hover:bg-blue-700 text-white"
+          className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
         >
           <Plus className="mr-2 h-4 w-4" />
           Tambah Unit
@@ -167,11 +166,11 @@ export const UnitTable = memo(function UnitTable({ units }: UnitTableProps) {
       <div className="rounded-md border">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead>Kode Unit</TableHead>
+            <TableRow className="bg-gray-50/50">
+              <TableHead className="w-[100px]">Kode</TableHead>
               <TableHead>Nama Unit</TableHead>
-              <TableHead>Proporsi (%)</TableHead>
-              <TableHead>Pegawai</TableHead>
+              <TableHead className="hidden md:table-cell">Proporsi</TableHead>
+              <TableHead className="hidden sm:table-cell">Pegawai</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Aksi</TableHead>
             </TableRow>
@@ -187,31 +186,33 @@ export const UnitTable = memo(function UnitTable({ units }: UnitTableProps) {
               units.map((unit) => (
                 <TableRow key={unit.id}>
                   <TableCell className="font-medium">{unit.code}</TableCell>
-                  <TableCell>{unit.name}</TableCell>
-                  <TableCell>{unit.proportion_percentage.toFixed(2)}%</TableCell>
-                  <TableCell>{getEmployeeCount(unit)}</TableCell>
+                  <TableCell className="max-w-[200px] truncate">{unit.name}</TableCell>
+                  <TableCell className="hidden md:table-cell">{unit.proportion_percentage.toFixed(2)}%</TableCell>
+                  <TableCell className="hidden sm:table-cell">{getEmployeeCount(unit)}</TableCell>
                   <TableCell>
                     <span
                       className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${unit.is_active
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-gray-100 text-gray-800'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-gray-100 text-gray-800'
                         }`}
                     >
                       {unit.is_active ? 'Aktif' : 'Nonaktif'}
                     </span>
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex justify-end gap-1">
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon"
+                        className="h-8 w-8 text-blue-600"
                         onClick={() => handleEdit(unit)}
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon"
+                        className={`h-8 w-8 ${unit.is_active ? 'text-amber-600' : 'text-emerald-600'}`}
                         onClick={() => handleToggleActive(unit)}
                       >
                         {unit.is_active ? (
@@ -222,7 +223,8 @@ export const UnitTable = memo(function UnitTable({ units }: UnitTableProps) {
                       </Button>
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon"
+                        className="h-8 w-8 text-red-600"
                         onClick={() => handleDelete(unit)}
                         disabled={getEmployeeCount(unit) > 0}
                       >

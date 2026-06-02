@@ -51,11 +51,11 @@ export function UnitPerformanceTable({ units }: UnitPerformanceTableProps) {
       <CardContent>
         <Table>
           <TableHeader>
-            <TableRow>
+            <TableRow className="bg-gray-50/50">
               <TableHead>Unit</TableHead>
-              <TableHead className="text-center">Jumlah Pegawai</TableHead>
-              <TableHead className="text-center">Rata-rata Skor</TableHead>
-              <TableHead className="text-center">Tren</TableHead>
+              <TableHead className="hidden sm:table-cell text-center">Pegawai</TableHead>
+              <TableHead className="text-center font-semibold">Skor</TableHead>
+              <TableHead className="hidden md:table-cell text-center">Tren</TableHead>
               <TableHead className="text-center">Status</TableHead>
             </TableRow>
           </TableHeader>
@@ -69,13 +69,13 @@ export function UnitPerformanceTable({ units }: UnitPerformanceTableProps) {
             ) : (
               units.map((unit) => (
                 <TableRow key={unit.id}>
-                  <TableCell className="font-medium">{unit.name}</TableCell>
-                  <TableCell className="text-center">{unit.employeeCount}</TableCell>
-                  <TableCell className="text-center font-bold">{unit.avgScore.toFixed(2)}</TableCell>
-                  <TableCell className="text-center">
+                  <TableCell className="font-medium text-sm">{unit.name}</TableCell>
+                  <TableCell className="hidden sm:table-cell text-center text-sm">{unit.employeeCount}</TableCell>
+                  <TableCell className="text-center font-bold text-sm">{unit.avgScore.toFixed(1)}</TableCell>
+                  <TableCell className="hidden md:table-cell text-center">
                     <div className="flex items-center justify-center gap-1">
                       {getTrendIcon(unit.trend)}
-                      <span className="text-sm">{unit.trendValue}%</span>
+                      <span className="text-xs font-mono">{unit.trendValue}%</span>
                     </div>
                   </TableCell>
                   <TableCell className="text-center">

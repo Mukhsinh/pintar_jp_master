@@ -121,35 +121,28 @@ export const TariffTable = memo(function TariffTable({ tariffs }: TariffTablePro
 
     return (
         <>
-            <div className="flex justify-between items-center mb-6">
-                <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                     <Button
                         onClick={handleDownloadTemplate}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm border-none"
+                        className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9 shadow-sm"
                     >
-                        <Download className="mr-2 h-4 w-4" />
-                        Unduh Template
+                        <Download className="mr-1.5 h-3.5 w-3.5" />
+                        Template
                     </Button>
 
                     <Button
                         onClick={() => document.getElementById('import-tariffs')?.click()}
-                        className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm border-none"
+                        className="flex-1 sm:flex-none bg-amber-600 hover:bg-amber-700 text-white text-xs h-9 shadow-sm"
                     >
-                        <Upload className="mr-2 h-4 w-4" />
-                        Import Data
+                        <Upload className="mr-1.5 h-3.5 w-3.5" />
+                        Import
                     </Button>
-                    <input
-                        id="import-tariffs"
-                        type="file"
-                        accept=".xlsx,.xls"
-                        onChange={handleImport}
-                        className="hidden"
-                    />
                 </div>
 
                 <Button
                     onClick={handleAdd}
-                    className="bg-blue-600 hover:bg-blue-700 text-white shadow-md border-none transition-all active:scale-95"
+                    className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-md border-none transition-all active:scale-95"
                 >
                     <Plus className="mr-2 h-4 w-4" />
                     Tambah Tarif
@@ -158,15 +151,15 @@ export const TariffTable = memo(function TariffTable({ tariffs }: TariffTablePro
 
             <div className="rounded-md border bg-white overflow-hidden shadow-sm">
                 <Table>
-                    <TableHeader className="bg-gray-50">
+                    <TableHeader className="bg-gray-50/50">
                         <TableRow>
-                            <TableHead className="w-[120px]">Kode</TableHead>
-                            <TableHead className="w-[150px]">Jenis Layanan</TableHead>
+                            <TableHead className="w-[80px]">Kode</TableHead>
+                            <TableHead className="hidden lg:table-cell w-[150px]">Jenis</TableHead>
                             <TableHead>Nama Tarif / Aktivitas</TableHead>
-                            <TableHead className="w-[150px]">Tipe</TableHead>
-                            <TableHead className="w-[150px] text-right">Nilai / Tarif</TableHead>
-                            <TableHead className="w-[120px] text-center">Status</TableHead>
-                            <TableHead className="w-[120px] text-right">Aksi</TableHead>
+                            <TableHead className="hidden md:table-cell w-[120px]">Tipe</TableHead>
+                            <TableHead className="w-[120px] text-right">Nilai</TableHead>
+                            <TableHead className="hidden sm:table-cell w-[100px] text-center">Status</TableHead>
+                            <TableHead className="w-[100px] text-right">Aksi</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -179,32 +172,32 @@ export const TariffTable = memo(function TariffTable({ tariffs }: TariffTablePro
                         ) : (
                             tariffs.map((tariff) => (
                                 <TableRow key={tariff.id} className="hover:bg-gray-50/50 transition-colors">
-                                    <TableCell className="font-mono text-xs font-bold text-gray-600">{tariff.code}</TableCell>
-                                    <TableCell>
-                                        <span className="text-xs font-semibold px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
+                                    <TableCell className="font-mono text-[10px] font-bold text-gray-500">{tariff.code}</TableCell>
+                                    <TableCell className="hidden lg:table-cell">
+                                        <span className="text-[10px] font-semibold px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
                                             {tariff.service_type || '-'}
                                         </span>
                                     </TableCell>
-                                    <TableCell className="font-medium text-gray-900">{tariff.name}</TableCell>
-                                    <TableCell>
+                                    <TableCell className="font-medium text-gray-900 text-sm">{tariff.name}</TableCell>
+                                    <TableCell className="hidden md:table-cell">
                                         <span className={cn(
-                                            "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                                            "px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider",
                                             tariff.type === 'activity'
                                                 ? "bg-amber-100 text-amber-700 border border-amber-200"
                                                 : "bg-blue-100 text-blue-700 border border-blue-200"
                                         )}>
-                                            {tariff.type === 'activity' ? 'Berbasis Aktivitas' : 'Berbasis Indeks'}
+                                            {tariff.type === 'activity' ? 'Aktivitas' : 'Indeks'}
                                         </span>
                                     </TableCell>
-                                    <TableCell className="text-right font-mono font-semibold">
+                                    <TableCell className="text-right font-mono font-semibold text-sm">
                                         {tariff.type === 'activity'
                                             ? `Rp ${tariff.amount.toLocaleString('id-ID')}`
                                             : tariff.amount.toFixed(2)
                                         }
                                     </TableCell>
-                                    <TableCell className="text-center">
+                                    <TableCell className="text-center hidden sm:table-cell">
                                         <span className={cn(
-                                            "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold",
+                                            "inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold",
                                             tariff.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
                                         )}>
                                             {tariff.is_active ? 'Aktif' : 'Nonaktif'}

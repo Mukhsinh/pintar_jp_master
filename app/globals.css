@@ -102,4 +102,15 @@
   .prevent-shift {
     content-visibility: auto;
   }
+
+  /* Responsive sidebar margin */
+  .main-content {
+    margin-left: 0;
+  }
+
+  @media (min-width: 1024px) {
+    .main-content {
+      margin-left: var(--sidebar-width, 288px);
+    }
+  }
 }

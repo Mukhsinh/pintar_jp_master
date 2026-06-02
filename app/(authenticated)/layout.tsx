@@ -22,8 +22,8 @@ export default async function AuthenticatedLayout({
     <div className="flex h-screen overflow-hidden bg-gray-50">
       <Sidebar />
       {/* pt-14 on mobile gives space below the fixed hamburger button */}
-      <main className="flex-1 overflow-y-auto lg:ml-72 flex flex-col pt-14 lg:pt-0">
-        <div className="flex-1">
+      <main className="flex-1 overflow-y-auto flex flex-col pt-14 lg:pt-0 transition-all duration-300 main-content">
+        <div className="flex-1 w-full overflow-x-hidden">
           <ErrorBoundary>
             {children}
           </ErrorBoundary>
