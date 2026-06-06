@@ -11,10 +11,10 @@ export default async function AuthenticatedLayout({
 }) {
   const supabase = await createClient()
 
-  // Verify session exists
-  const { data: { session } } = await supabase.auth.getSession()
+  // Verify session exists using getUser() for security
+  const { data: { user } } = await supabase.auth.getUser()
 
-  if (!session) {
+  if (!user) {
     redirect('/login')
   }
 

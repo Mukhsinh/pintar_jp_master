@@ -113,19 +113,20 @@ function useAuth() {
     ; (async () => {
       try {
         const supabase = createClient()
-        const { data: { session } } = await supabase.auth.getSession()
-        if (session?.user) {
-          const role = session.user.user_metadata?.role || 'employee'
+        // Use getUser() instead of getSession() to avoid refresh token errors
+        const { data: { user: authUser } } = await supabase.auth.getUser()
+        if (authUser) {
+          const role = authUser.user_metadata?.role || 'employee'
           const { data: emp } = await supabase
             .from('m_employees')
             .select('full_name, unit_id')
-            .eq('user_id', session.user.id)
+            .eq('user_id', authUser.id)
             .maybeSingle()
           setUser({
-            id: session.user.id,
-            email: session.user.email || '',
+            id: authUser.id,
+            email: authUser.email || '',
             role,
-            full_name: emp?.full_name || session.user.user_metadata?.full_name,
+            full_name: emp?.full_name || authUser.user_metadata?.full_name,
             unit_id: emp?.unit_id,
           })
         }

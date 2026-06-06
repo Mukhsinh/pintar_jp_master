@@ -7,9 +7,9 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const year = parseInt(searchParams.get('year') || new Date().getFullYear().toString())
 
-    // Get current session
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) {
+    // Get current user using getUser()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     const { data: employee } = await supabase
       .from('m_employees')
       .select('id, role, unit_id')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .single()
 
     if (!employee) {
@@ -43,11 +43,11 @@ export async function GET(request: Request) {
     }))
 
     const response = NextResponse.json(transformedData)
-    
+
     // Add caching headers (cache for 5 minutes)
     response.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600')
     response.headers.set('CDN-Cache-Control', 'public, s-maxage=300')
-    
+
     return response
   } catch (error) {
     console.error('Performance data error:', error)

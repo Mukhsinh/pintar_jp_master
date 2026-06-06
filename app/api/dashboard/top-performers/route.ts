@@ -9,9 +9,9 @@ export async function GET(request: Request) {
     const month = parseInt(searchParams.get('month') || (new Date().getMonth() + 1).toString())
     const limit = parseInt(searchParams.get('limit') || '10')
 
-    // Get current session
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) {
+    // Get current user using getUser()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     const { data: employee } = await supabase
       .from('m_employees')
       .select('id, role, unit_id')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .single()
 
     if (!employee) {

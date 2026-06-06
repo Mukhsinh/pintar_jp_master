@@ -119,15 +119,18 @@ export default function LoginPage() {
 
   const checkStuckSession = async () => {
     try {
-      const supabase = createClient()
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        await supabase.auth.signOut({ scope: 'local' })
-        localStorage.clear()
-        sessionStorage.clear()
-      }
+      // Clear storage directly instead of checking session first
+      // This avoids the "Refresh Token Not Found" error from getSession()
+      localStorage.clear()
+      sessionStorage.clear()
+
+      // Also try to clear cookies that might be stuck
+      const cookiesToClear = ['sb-access-token', 'sb-refresh-token', 'supabase-auth-token']
+      cookiesToClear.forEach(name => {
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+      })
     } catch (e) {
-      console.warn('[LOGIN] Error checking session:', e)
+      // Quietly ignore storage errors
     }
   }
 

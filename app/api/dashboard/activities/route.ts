@@ -7,9 +7,9 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const limit = parseInt(searchParams.get('limit') || '20')
 
-    // Get current session
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) {
+    // Get current user using getUser()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     const { data: employee } = await supabase
       .from('m_employees')
       .select('id, role, unit_id')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .single()
 
     if (!employee) {
@@ -43,7 +43,7 @@ export async function GET(request: Request) {
     if (employee.role === 'unit_manager') {
       query = query.eq('unit_id', employee.unit_id)
     } else if (employee.role === 'employee') {
-      query = query.eq('user_id', session.user.id)
+      query = query.eq('user_id', user.id)
     }
 
     const { data, error } = await query
@@ -56,7 +56,7 @@ export async function GET(request: Request) {
     // Format activities
     const activities = data?.map((log: any) => {
       let type: 'realization' | 'calculation' | 'approval' | 'report' = 'report'
-      
+
       if (log.table_name === 't_kpi_realizations') {
         type = 'realization'
       } else if (log.action === 'calculate') {

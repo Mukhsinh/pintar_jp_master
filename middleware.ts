@@ -97,7 +97,7 @@ export async function middleware(request: NextRequest) {
       employeeCache.clear()
     }
 
-    // 1. Create supabase client - single attempt, no retries
+    // 1. Create supabase client
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -144,35 +144,21 @@ export async function middleware(request: NextRequest) {
       }
     )
 
-    // Get session and refresh if needed
-    let session = null
+    // IMPORTANT: Verify user session using getUser()
+    // getSession() is insecure in middleware and can cause refresh token errors
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
 
-    try {
-      // First try to get current session
-      const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession()
-
-      if (sessionError) {
-        console.error('[MIDDLEWARE] Session fetch failed:', sessionError)
-      } else if (currentSession) {
-        session = currentSession
-
-        // Check if session needs refresh (expires in less than 60 seconds)
-        const expiresAt = currentSession.expires_at || 0
-        const now = Math.floor(Date.now() / 1000)
-        const timeUntilExpiry = expiresAt - now
-
-        if (timeUntilExpiry < 60 && timeUntilExpiry > 0) {
-          // Refresh the session
-          const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession()
-          if (!refreshError && refreshedSession) {
-            session = refreshedSession
-          }
-        }
+    // If there's an error and it's related to invalid/missing tokens, 
+    // we let it be handled by the session check below
+    if (userError) {
+      // Don't log expected auth errors to keep console clean
+      if (!userError.message.includes('Refresh Token Not Found')) {
+        console.warn('[MIDDLEWARE] Auth check:', userError.message)
       }
-    } catch (error) {
-      console.error('[MIDDLEWARE] Session handling error:', error)
-      // Continue without session - let auth pages handle it
     }
+
+    const session = user ? { user } : null
+
 
     // 2. Check if public route (login, reset-password, forbidden)
     if (isPublicRoute(pathname)) {

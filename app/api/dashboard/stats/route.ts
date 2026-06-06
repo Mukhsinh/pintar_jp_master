@@ -9,9 +9,9 @@ export async function GET(request: Request) {
     const year = parseInt(searchParams.get('year') || new Date().getFullYear().toString())
     const month = parseInt(searchParams.get('month') || (new Date().getMonth() + 1).toString())
 
-    // Get current session
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) {
+    // Get current user using getUser()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     const { data: employee } = await supabase
       .from('m_employees')
       .select('id, role, unit_id')
-      .eq('user_id', session.user.id)
+      .eq('user_id', user.id)
       .single()
 
     if (!employee) {
@@ -52,13 +52,13 @@ export async function GET(request: Request) {
         } else {
           // Fallback to individual queries if RPC fails
           const dashboardStats = await DashboardService.getSuperadminStats()
-          
+
           stats.totalUnits = dashboardStats.totalUnits
           stats.totalEmployees = dashboardStats.totalEmployees
           stats.totalUsers = dashboardStats.totalEmployees
           stats.avgScore = dashboardStats.avgScore
           stats.completionRate = dashboardStats.completionRate
-          
+
           // Quick parallel queries for remaining data
           const [poolsResult, poolDataResult, indicatorsResult] = await Promise.allSettled([
             supabase
@@ -77,12 +77,12 @@ export async function GET(request: Request) {
           ])
 
           stats.activePools = poolsResult.status === 'fulfilled' ? (poolsResult.value.count || 0) : 0
-          
-          const totalPoolAmount = poolDataResult.status === 'fulfilled' 
+
+          const totalPoolAmount = poolDataResult.status === 'fulfilled'
             ? (poolDataResult.value.data?.reduce((sum, pool) => sum + (pool.total_amount || 0), 0) || 0)
             : 0
           stats.totalPoolAmount = totalPoolAmount
-          
+
           stats.totalIndicators = indicatorsResult.status === 'fulfilled' ? (indicatorsResult.value.count || 0) : 0
         }
       } catch (error) {
@@ -148,11 +148,11 @@ export async function GET(request: Request) {
     }
 
     const response = NextResponse.json(stats)
-    
+
     // Add caching headers (cache for 2 minutes)
     response.headers.set('Cache-Control', 'public, s-maxage=120, stale-while-revalidate=300')
     response.headers.set('CDN-Cache-Control', 'public, s-maxage=120')
-    
+
     return response
 
   } catch (error) {
