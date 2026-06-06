@@ -21,8 +21,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   FileText, Download, TrendingUp, Building2, IdCard,
-  FileSpreadsheet, FileDown, BarChart2, ClipboardCheck, ChevronDown
+  FileSpreadsheet, FileDown, BarChart2, ClipboardCheck, ChevronDown,
+  Users, Search, Filter
 } from 'lucide-react'
+import { formatNumber, formatCurrency } from '@/lib/utils/format'
 
 // ────────────────────────────────────────────────────────────────
 // Constants
@@ -64,10 +66,8 @@ const REPORT_TYPES = [
   },
 ]
 
-const formatCurrency = (val: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val)
-
 // ────────────────────────────────────────────────────────────────
+// Sub-components
 // Sub-components
 // ────────────────────────────────────────────────────────────────
 
@@ -109,6 +109,9 @@ function ReportTypeCard({
 }
 
 function IncentiveTable({ data }: { data: any[] }) {
+  if (!Array.isArray(data)) {
+    return <div>Data must be an array, but received: {typeof data}</div>;
+  }
   return (
     <table className="w-full border-collapse text-sm">
       <thead>
@@ -120,33 +123,34 @@ function IncentiveTable({ data }: { data: any[] }) {
       </thead>
       <tbody>
         {data.map((row: any, idx: number) => (
-          <tr key={idx} className="hover:bg-gray-50 text-xs">
-            <td className="border p-2 whitespace-nowrap">{row.employee_code || '-'}</td>
-            <td className="border p-2 font-medium min-w-[150px]">{row.employee_name}</td>
-            <td className="border p-2 whitespace-nowrap">{row.unit}</td>
-            <td className="border p-2 text-right">{(parseFloat(row.p1_score) || 0).toFixed(2)}</td>
-            <td className="border p-2 text-right">{(parseFloat(row.p2_score) || 0).toFixed(2)}</td>
-            <td className="border p-2 text-right">{(parseFloat(row.p3_score) || 0).toFixed(2)}</td>
-            <td className="border p-2 text-right font-bold text-blue-700">{(parseFloat(row.total_score) || 0).toFixed(2)}</td>
-            <td className="border p-2 text-right text-purple-600">{formatCurrency(parseFloat(row.pir_value) || 0)}</td>
+          <tr key={idx} className="hover:bg-gray-50 text-xs text-left">
+            <td className="border p-2 whitespace-nowrap">{safeRender(row.employee_code || '-')}</td>
+            <td className="border p-2 font-medium min-w-[150px]">{safeRender(row.employee_name)}</td>
+            <td className="border p-2 whitespace-nowrap">{safeRender(row.unit)}</td>
+            <td className="border p-2 text-right">{formatNumber(Number(row.p1_score) || 0, 2)}</td>
+            <td className="border p-2 text-right">{formatNumber(Number(row.p2_score) || 0, 2)}</td>
+            <td className="border p-2 text-right">{formatNumber(Number(row.p3_score) || 0, 2)}</td>
+            <td className="border p-2 text-right font-bold text-blue-700">{formatNumber(Number(row.total_score) || 0, 2)}</td>
+            <td className="border p-2 text-right text-purple-600">{formatCurrency(Number(row.pir_value) || 0)}</td>
             <td className="border p-2 text-right font-semibold text-orange-600">
               <div className="text-[10px] text-gray-400">Total Kuantitatif</div>
-              {formatCurrency(parseFloat(row.total_activity || row.total_activity_rupiah || 0))}
+              {formatCurrency(Number(row.total_activity) || Number(row.total_activity_rupiah) || 0)}
             </td>
             <td className="border p-2 text-right font-bold">
               <div className="text-[10px] text-gray-400 font-normal">(Skor×PIR) + Kuantitatif</div>
-              {formatCurrency(parseFloat(row.gross_incentive) || 0)}
+              {formatCurrency(Number(row.gross_incentive) || 0)}
             </td>
             <td className="border p-2 text-right text-red-600">
-              {formatCurrency(parseFloat(row.tax_amount) || 0)}
-              {row.tax_detail && <div className="text-[10px] text-gray-500 italic">({row.tax_detail})</div>}
-              {row.tax_mechanism_used === 'none' && !row.tax_detail && <div className="text-[10px] text-gray-400 italic">(N/A)</div>}
+              {formatCurrency(Number(row.tax_amount) || 0)}
+              {row.tax_detail && typeof row.tax_detail === 'string' && row.tax_detail !== '-' && (
+                <div className="text-[10px] text-gray-500 italic">({row.tax_detail})</div>
+              )}
             </td>
             <td className="border p-2 text-right font-bold text-green-700">
               <div className="text-[10px] text-gray-400 font-normal">
                 {row.tax_mechanism_used === 'none' ? 'Incentive (Sebelum Pajak)' : 'Take Home Pay'}
               </div>
-              {formatCurrency(parseFloat(row.net_incentive) || 0)}
+              {formatCurrency(Number(row.net_incentive) || 0)}
             </td>
           </tr>
         ))}
@@ -160,19 +164,27 @@ function UnitComparisonTable({ data }: { data: any[] }) {
     <table className="w-full border-collapse text-sm">
       <thead>
         <tr className="bg-gray-100">
-          <th className="border p-2 text-left font-semibold">UNIT</th>
-          <th className="border p-2 text-right font-semibold">RATA-RATA SKOR</th>
-          <th className="border p-2 text-right font-semibold">TOTAL INSENTIF</th>
-          <th className="border p-2 text-right font-semibold">JUMLAH PEGAWAI</th>
+          <th className="border p-2 text-left font-semibold text-[10px]">UNIT</th>
+          <th className="border p-2 text-right font-semibold text-[10px]">RATA-RATA SKOR INDEKS</th>
+          <th className="border p-2 text-right font-semibold text-[10px]">RATA-RATA PRIORITAS (RP)</th>
+          <th className="border p-2 text-right font-semibold text-[10px]">TOTAL POIN INDEKS UNIT</th>
+          <th className="border p-2 text-right font-semibold text-[10px]">TOTAL AKTIVITAS UNIT (RP)</th>
+          <th className="border p-2 text-right font-semibold text-[10px]">PIR UNIT</th>
+          <th className="border p-2 text-right font-semibold text-[10px]">TOTAL INSENTIF</th>
+          <th className="border p-2 text-right font-semibold text-[10px]">JUMLAH PEGAWAI</th>
         </tr>
       </thead>
       <tbody>
         {data.map((row: any, idx: number) => (
-          <tr key={idx} className="hover:bg-gray-50">
-            <td className="border p-2 font-medium">{row.unit_name}</td>
-            <td className="border p-2 text-right font-bold text-blue-700">{row.average_score}</td>
-            <td className="border p-2 text-right font-bold text-green-700">{formatCurrency(parseFloat(row.total_incentive) || 0)}</td>
-            <td className="border p-2 text-right">{row.employee_count}</td>
+          <tr key={idx} className="hover:bg-gray-50 text-xs">
+            <td className="border p-2 font-medium">{safeRender(row.unit_name)}</td>
+            <td className="border p-2 text-right font-bold text-blue-700">{formatNumber(row.average_score || 0, 2)}</td>
+            <td className="border p-2 text-right text-orange-600">{formatCurrency(row.average_priority || 0)}</td>
+            <td className="border p-2 text-right">{formatNumber(row.total_unit_score || 0, 2)}</td>
+            <td className="border p-2 text-right text-orange-700">{formatCurrency(row.total_unit_activity || 0)}</td>
+            <td className="border p-2 text-right text-purple-600">{formatCurrency(row.pir_value || 0)}</td>
+            <td className="border p-2 text-right font-bold text-green-700">{formatCurrency(row.total_incentive || 0)}</td>
+            <td className="border p-2 text-right">{safeRender(row.employee_count)}</td>
           </tr>
         ))}
       </tbody>
@@ -203,8 +215,8 @@ function KPIAchievementTable({ data }: { data: any[] }) {
                 <tr key={idx} className="hover:bg-gray-50">
                   <td className="border p-2 font-medium">{safeRender(row.employee_name || row.unit_name)}</td>
                   <td className="border p-2">{safeRender(row.indicator || row.indicator_name)}</td>
-                  <td className="border p-2 text-right">{safeRender(row.weight)}%</td>
-                  <td className="border p-2 text-right font-bold text-blue-700">{safeRender(row.achievement_percentage)}%</td>
+                  <td className="border p-2 text-right">{formatNumber(row.weight || 0, 2)}%</td>
+                  <td className="border p-2 text-right font-bold text-blue-700">{formatNumber(row.achievement_percentage || 0, 2)}%</td>
                 </tr>
               ))}
             </tbody>
@@ -228,7 +240,9 @@ function KPIAchievementTable({ data }: { data: any[] }) {
                 <tr key={idx} className="hover:bg-gray-50">
                   <td className="border p-2 font-medium">{safeRender(row.employee_name || row.unit_name)}</td>
                   <td className="border p-2">{safeRender(row.indicator || row.indicator_name)}</td>
-                  <td className="border p-2 text-right font-bold text-orange-700">{safeRender(row.realization_value)}</td>
+                  <td className="border p-2 text-right font-bold text-orange-700">
+                    {safeRender(row.realization_value || row.achievement)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -558,6 +572,7 @@ export default function ReportsPage() {
       {reportData && (
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4">Pratinjau Laporan</h2>
+
           <div className="overflow-x-auto">
             {(selectedReport === 'incentive' || selectedReport === 'employee-slip') ? (
               <IncentiveTable data={reportData} />
@@ -567,8 +582,9 @@ export default function ReportsPage() {
               <KPIAchievementTable data={reportData} />
             )}
           </div>
-        </Card>
-      )}
-    </div>
+        </Card >
+      )
+      }
+    </div >
   )
 }

@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
     // Get ALL categories (not filtered by unit_id) first, to check if data exists
     const { data: allCategories, error: allCatError } = await adminClient
       .from('m_kpi_categories')
-      .select('id, category_name, category, weight_percentage, unit_id, configuration_style')
+      .select('id, category_name, category, weight_percentage, unit_id, configuration_style, is_weighted')
       .eq('is_active', true)
 
     console.log('[indicators] allCategories count:', allCategories?.length, 'error:', allCatError?.message)
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
     // Get indicators for the categories
     const { data: indicators, error: indicatorsError } = await adminClient
       .from('m_kpi_indicators')
-      .select('id, code, name, target_value, weight_percentage, category_id, measurement_unit, description')
+      .select('id, code, name, target_value, weight_percentage, category_id, measurement_unit, description, calculation_method, basic_index_value')
       .eq('is_active', true)
       .in('category_id', categoryIds)
 
@@ -224,11 +224,14 @@ export async function GET(request: NextRequest) {
         name: indicator.name,
         target_value: indicator.target_value,
         weight_percentage: indicator.weight_percentage,
+        calculation_method: indicator.calculation_method || 'indexing',
+        basic_index_value: indicator.basic_index_value || 0,
         category_id: indicator.category_id,
         category_name: category?.category_name || 'Tanpa Kategori',
         category_type: category?.category || 'Unknown',
         category_weight: category?.weight_percentage || 0,
         category_style: category?.configuration_style || 'index',
+        category_is_weighted: category?.is_weighted !== false,
         measurement_unit: indicator.measurement_unit,
         description: indicator.description,
         sub_indicators: subIndicatorMap.get(indicator.id) || [],
@@ -244,6 +247,8 @@ export async function GET(request: NextRequest) {
           category: categoryType,
           category_name: indicator.category_name,
           weight_percentage: indicator.category_weight,
+          configuration_style: indicator.category_style,
+          is_weighted: indicator.category_is_weighted,
           indicators: []
         }
       }

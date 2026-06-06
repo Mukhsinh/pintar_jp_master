@@ -43,12 +43,81 @@ next-env.d.ts
 /tmp/
 /test-output/
 
-# logs
+# logs & debug output
 *.log
 *.log*
 *_log.txt
 cols.log
 schema_check.log
+dev_log.txt
+*.txt
+output.json
+response.json
+reports_output.json
+
+# Debug / test scripts (one-off scripts created during debugging)
+check_*.js
+check_*.ts
+debug-*.js
+debug-*.ts
+find_*.js
+inspect_*.js
+compare_*.js
+test-db*.js
+test-db*.ts
+test_*.js
+test_filter*.js
+get_report.js
+find_scores.js
+read_excel.py
+*.py
+
+# PowerShell fix/test scripts (not needed in repo)
+FIX_*.ps1
+TEST_*.ps1
+PERBAIKAN_*.md
+PERBAIKI_*.ps1
+VERIFIKASI_*.ps1
+MULAI_*.ps1
+RESTART_*.ps1
+START_*.ps1
+DEPLOY_*.ps1
+PUSH_*.ps1
+SETUP_*.ps1
+OPTIMASI_*.ps1
+REBUILD_*.md
+QUICK_*.ps1
+QUICK_*.sql
+CARA_*.md
+PANDUAN_*.md
+INSTALL.md
+DASHBOARD_FEATURES.md
+FOOTER_IMPLEMENTATION.md
+IMPLEMENTASI_PENILAIAN_KPI.md
+SIDEBAR_FIX_SUMMARY.md
+SUB_INDICATORS_IMPLEMENTATION_SUMMARY.md
+REFACTORING_SUMMARY.md
+VERCEL_DEPLOY_FIX_SUMMARY.md
+SOLUSI_ERROR_WEBPACK.md
+DEPLOY_GITHUB_VERCEL.ps1
+DEPLOY_TO_VERCEL.ps1
+DEPLOY_VERCEL_READY.ps1
+DEPLOY_VERCEL_SUCCESS.ps1
+GITHUB_AUTH_PUSH.ps1
+QUICK_PUSH.ps1
+
+# migration logs
+migration-log-*.json
+
+# backup/alternate next configs
+next.config.backup.js
+next.config.clean.js
+next.config.simple.js
+
+# large data files
+*.xls
+*.xlsx
+materi KPI/
 
 # configuration and sensitive
 .env*.local

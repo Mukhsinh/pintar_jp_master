@@ -41,7 +41,8 @@ export default function CategoryFormDialog({
     category_name: '',
     weight_percentage: '',
     description: '',
-    configuration_style: 'percentage' as 'percentage' | 'activity'
+    configuration_style: 'percentage' as 'percentage' | 'activity',
+    is_weighted: true
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
@@ -53,7 +54,8 @@ export default function CategoryFormDialog({
         category_name: category.category_name,
         weight_percentage: category.weight_percentage.toString(),
         description: category.description || '',
-        configuration_style: category.configuration_style || 'percentage'
+        configuration_style: category.configuration_style || 'percentage',
+        is_weighted: category.is_weighted ?? true
       })
     } else {
       setFormData({
@@ -61,7 +63,8 @@ export default function CategoryFormDialog({
         category_name: '',
         weight_percentage: '',
         description: '',
-        configuration_style: 'percentage'
+        configuration_style: 'percentage',
+        is_weighted: true
       })
     }
     setErrors({})
@@ -74,7 +77,7 @@ export default function CategoryFormDialog({
       newErrors.category_name = 'Nama kategori wajib diisi'
     }
 
-    if (formData.configuration_style === 'percentage') {
+    if (formData.is_weighted && formData.configuration_style === 'percentage') {
       if (!formData.weight_percentage) {
         newErrors.weight_percentage = 'Persentase bobot wajib diisi'
       } else {
@@ -84,7 +87,7 @@ export default function CategoryFormDialog({
         } else {
           // Check if total weight would exceed 100%
           const otherCategories = existingCategories.filter(
-            c => c.id !== category?.id && c.configuration_style !== 'activity'
+            c => c.id !== category?.id && c.configuration_style !== 'activity' && c.is_weighted !== false
           )
           const otherWeightsSum = otherCategories.reduce((sum, c) => sum + Number(c.weight_percentage), 0)
           const totalWeight = otherWeightsSum + weight
@@ -109,13 +112,13 @@ export default function CategoryFormDialog({
   }
 
   function getTotalWeightInfo(): { total: number; isValid: boolean; message: string } {
-    if (formData.configuration_style === 'activity') {
-      return { total: 0, isValid: true, message: 'Kategori Aktivitas tidak menggunakan bobot.' }
+    if (!formData.is_weighted || formData.configuration_style === 'activity') {
+      return { total: 0, isValid: true, message: 'Kategori Tanpa Bobot tidak menggunakan bobot.' }
     }
 
     const weight = parseFloat(formData.weight_percentage) || 0
     const otherCategories = existingCategories.filter(
-      c => c.id !== category?.id && c.configuration_style !== 'activity'
+      c => c.id !== category?.id && c.configuration_style !== 'activity' && c.is_weighted !== false
     )
     const otherWeightsSum = otherCategories.reduce((sum, c) => sum + Number(c.weight_percentage), 0)
     const totalWeight = otherWeightsSum + weight
@@ -143,10 +146,11 @@ export default function CategoryFormDialog({
         unit_id: category?.unit_id || unitId,
         category: formData.category,
         category_name: formData.category_name.trim(),
-        weight_percentage: formData.configuration_style === 'activity' ? 0 : parseFloat(formData.weight_percentage),
+        weight_percentage: (!formData.is_weighted || formData.configuration_style === 'activity') ? 0 : parseFloat(formData.weight_percentage),
         description: formData.description.trim() || null,
         is_active: true,
-        configuration_style: formData.configuration_style
+        configuration_style: formData.configuration_style,
+        is_weighted: formData.is_weighted
       }
 
       if (category) {
@@ -188,6 +192,23 @@ export default function CategoryFormDialog({
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            {/* Weighted or Unweighted */}
+            <div className="space-y-2">
+              <Label htmlFor="is_weighted">Tipe Bobot *</Label>
+              <select
+                id="is_weighted"
+                value={formData.is_weighted ? 'true' : 'false'}
+                onChange={(e) => setFormData({ ...formData, is_weighted: e.target.value === 'true' })}
+                className="w-full px-3 py-2 border rounded-md"
+              >
+                <option value="true">Dengan Bobot (Weighted)</option>
+                <option value="false">Tanpa Bobot (Unweighted)</option>
+              </select>
+              <p className="text-xs text-gray-500">
+                Kategori tanpa bobot tidak akan dikalikan dengan bobot pada saat penilaian dan perhitungan.
+              </p>
+            </div>
+
             {/* Category Type */}
             <div className="space-y-2">
               <Label htmlFor="category">Tipe Kategori *</Label>
@@ -240,7 +261,7 @@ export default function CategoryFormDialog({
             </div>
 
             {/* Weight Percentage */}
-            {formData.configuration_style === 'percentage' && (
+            {formData.is_weighted && formData.configuration_style === 'percentage' && (
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="weight_percentage">Persentase Bobot (%) *</Label>

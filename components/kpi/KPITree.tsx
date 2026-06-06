@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, memo } from 'react'
 import { ChevronDown, ChevronRight, Edit, Trash2, Plus, Layers } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { formatNumber, formatCurrency } from '@/lib/utils/format'
 import type { KPICategory, KPIIndicator, KPISubIndicator } from '@/lib/types/kpi.types'
 
 interface KPITreeProps {
@@ -143,13 +144,15 @@ const KPITree = memo(function KPITree({
 
   return (
     <div className="space-y-4">
-      {/* Category Weight Sum Validation */}
-      <div className={`p-3 rounded-lg ${isValidCategorySum ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-        <p className={`text-sm font-medium ${isValidCategorySum ? 'text-green-800' : 'text-red-800'}`}>
-          Total Bobot Kategori: {categoryWeightSum.toFixed(2)}%
-          {isValidCategorySum ? ' ✓' : ' (Harus sama dengan 100%)'}
-        </p>
-      </div>
+      {/* Category Weight Sum Validation - only show if there are weighted categories */}
+      {categories.some(c => c.is_weighted !== false) && (
+        <div className={`p-3 rounded-lg ${isValidCategorySum ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+          <p className={`text-sm font-medium ${isValidCategorySum ? 'text-green-800' : 'text-red-800'}`}>
+            Total Bobot Kategori (Tertimbang): {formatNumber(categoryWeightSum, 2)}%
+            {isValidCategorySum ? ' ✓' : ' (Harus sama dengan 100%)'}
+          </p>
+        </div>
+      )}
 
       {/* Categories */}
       {categories.map(category => {
@@ -177,16 +180,22 @@ const KPITree = memo(function KPITree({
                   <div className="flex items-center gap-3">
                     <span className="font-semibold text-lg">{category.category}</span>
                     <span className="text-gray-700">{category.category_name}</span>
-                    <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm font-medium">
-                      {(Number(category.weight_percentage) || 0).toFixed(2)}%
-                    </span>
+                    {category.is_weighted !== false ? (
+                      <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm font-medium">
+                        {formatNumber(category.weight_percentage || 0, 2)}%
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 bg-amber-100 text-amber-800 rounded text-sm font-medium">
+                        Tanpa Bobot
+                      </span>
+                    )}
                   </div>
                   {category.description && (
                     <p className="text-sm text-gray-600 mt-1">{category.description}</p>
                   )}
-                  {categoryIndicators.length > 0 && (
+                  {categoryIndicators.length > 0 && category.is_weighted !== false && (
                     <p className={`text-xs mt-1 ${isValidIndicatorSum ? 'text-green-600' : 'text-red-600'}`}>
-                      Bobot indikator: {indicatorWeightSum.toFixed(2)}%
+                      Bobot indikator: {formatNumber(indicatorWeightSum, 2)}%
                       {isValidIndicatorSum ? ' ✓' : ' (Harus sama dengan 100%)'}
                     </p>
                   )}
@@ -254,9 +263,16 @@ const KPITree = memo(function KPITree({
                               <div className="flex items-center gap-3">
                                 <span className="font-mono text-sm text-gray-600">{indicator.code}</span>
                                 <span className="font-medium">{indicator.name}</span>
-                                <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs font-medium">
-                                  {(Number(indicator.weight_percentage) || 0).toFixed(2)}%
-                                </span>
+                                {category.is_weighted !== false && indicator.calculation_method !== 'priority' && (
+                                  <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs font-medium">
+                                    {formatNumber(indicator.weight_percentage || 0, 2)}%
+                                  </span>
+                                )}
+                                {indicator.calculation_method === 'priority' && (
+                                  <span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded text-xs font-medium">
+                                    Prioritas
+                                  </span>
+                                )}
                                 {indicatorSubs.length > 0 && (
                                   <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs">
                                     <Layers className="h-3 w-3 inline mr-1" />
@@ -265,7 +281,7 @@ const KPITree = memo(function KPITree({
                                 )}
                               </div>
                               <div className="flex gap-4 mt-1 text-sm text-gray-600">
-                                <span>Target: {(Number(indicator.target_value) || 0).toFixed(2)}</span>
+                                <span>Target: {formatNumber(indicator.target_value || 0, 2)}</span>
                                 {indicator.measurement_unit && (
                                   <span>Satuan: {indicator.measurement_unit}</span>
                                 )}
@@ -273,9 +289,9 @@ const KPITree = memo(function KPITree({
                               {indicator.description && (
                                 <p className="text-xs text-gray-500 mt-1">{indicator.description}</p>
                               )}
-                              {indicatorSubs.length > 0 && (
+                              {indicatorSubs.length > 0 && category.is_weighted !== false && indicator.calculation_method !== 'priority' && (
                                 <p className={`text-xs mt-1 ${isValidSubSum ? 'text-green-600' : 'text-amber-600'}`}>
-                                  Bobot sub indikator: {subWeightSum.toFixed(2)}%
+                                  Bobot sub indikator: {formatNumber(subWeightSum, 2)}%
                                   {isValidSubSum ? ' ✓' : ' (Harus sama dengan 100%)'}
                                 </p>
                               )}
@@ -337,15 +353,17 @@ const KPITree = memo(function KPITree({
                                         <div className="flex items-center gap-2 flex-wrap">
                                           <span className="font-mono text-xs text-gray-500">{sub.code}</span>
                                           <span className="text-sm font-medium">{sub.name}</span>
-                                          <span className="px-1.5 py-0.5 bg-purple-100 text-purple-800 rounded text-xs font-medium">
-                                            {(Number(sub.weight_percentage) || 0).toFixed(2)}%
-                                          </span>
+                                          {category.is_weighted !== false && indicator.calculation_method !== 'priority' && (
+                                            <span className="px-1.5 py-0.5 bg-purple-100 text-purple-800 rounded text-xs font-medium">
+                                              {formatNumber(sub.weight_percentage || 0, 2)}%
+                                            </span>
+                                          )}
                                         </div>
                                         {/* Score badges or Quantitative Info */}
                                         <div className="flex gap-1 mt-2 flex-wrap">
                                           {sub.measurement_type === 'quantitative' ? (
                                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs bg-indigo-50 text-indigo-700 border-indigo-200">
-                                              <span className="font-bold">Tarif Dasar: Rp {(Number(sub.base_index_value) || 0).toLocaleString('id-ID')}</span>
+                                              <span className="font-bold">Tarif Dasar: {formatCurrency(sub.base_index_value || 0)}</span>
                                               <span className="opacity-70">(Satuan: {sub.measurement_unit || 'Volume'})</span>
                                             </span>
                                           ) : (
@@ -360,7 +378,7 @@ const KPITree = memo(function KPITree({
                                                   }`}
                                                 title={criterion.label}
                                               >
-                                                <span className="font-bold">{Number(criterion.score) || 0}</span>
+                                                <span className="font-bold">{formatNumber(criterion.score || 0)}</span>
                                                 <span className="opacity-70">({criterion.label})</span>
                                               </span>
                                             )) || []

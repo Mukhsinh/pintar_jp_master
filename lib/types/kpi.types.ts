@@ -9,6 +9,7 @@ export interface KPICategory {
   description: string | null
   is_active: boolean
   configuration_style?: 'percentage' | 'activity' | null
+  is_weighted?: boolean
 }
 
 export interface KPIIndicator {
@@ -22,6 +23,7 @@ export interface KPIIndicator {
   description: string | null
   is_active: boolean
   basic_index_value?: number | null
+  calculation_method?: 'indexing' | 'priority' | null
 }
 
 // Scoring criterion interface

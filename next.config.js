@@ -1,40 +1,58 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Essential settings for Vercel deployment
-  output: 'standalone',
-  
+
   // Enable compression
   compress: true,
-  
+
   // Experimental features
   experimental: {
     serverActions: {
       bodySizeLimit: '5mb',
     },
+    // Optimize package imports — tree-shake heavy icon libraries
+    optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
   },
-  
-  // Skip build checks for faster deployment
+
+  // Skip build checks for faster deploys
   eslint: {
     ignoreDuringBuilds: true,
   },
   typescript: {
     ignoreBuildErrors: true,
   },
-  
-  // Optimize for Vercel free tier
+
+  // Images: rely on Next built-in optimization where possible
   images: {
-    unoptimized: true,
+    unoptimized: true, // keep for Vercel free tier compatibility
   },
-  
-  // Disable source maps in production
+
+  // Disable source maps in production (faster builds, smaller bundles)
   productionBrowserSourceMaps: false,
-  
+
   // Remove console logs in production
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
   },
-  
-  // Basic webpack config
+
+  // Cache headers for static assets
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'X-DNS-Prefetch-Control', value: 'on' },
+        ],
+      },
+      {
+        source: '/api/(.*)',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store' },
+        ],
+      },
+    ]
+  },
+
+  // Webpack config — server-side shims only
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {
@@ -46,13 +64,19 @@ const nextConfig = {
     }
     return config
   },
-  
+
   // Redirect root to login
   async redirects() {
     return [
       {
         source: '/',
         destination: '/login',
+        permanent: false,
+      },
+      {
+        // Redirect direct access to master-tarif to dashboard
+        source: '/master-tarif',
+        destination: '/dashboard',
         permanent: false,
       },
     ]

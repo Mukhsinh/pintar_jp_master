@@ -1,8 +1,9 @@
 import { DashboardContent } from './DashboardContent'
-export default function DashboardPage({ searchParams }: { searchParams: { unit_id?: string, period?: string, year?: string } }) {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ unit_id?: string, period?: string, year?: string }> }) {
+  const params = await searchParams;
   return <DashboardContent
-    unitId={searchParams.unit_id}
-    period={searchParams.period}
-    year={searchParams.year}
+    unitId={params.unit_id}
+    period={params.period}
+    year={params.year}
   />
 }

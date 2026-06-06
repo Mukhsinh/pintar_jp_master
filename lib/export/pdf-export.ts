@@ -44,6 +44,7 @@ interface IncentiveSlipData {
   guarantee_fee?: number
   tax_detail?: string
   pnsGrade?: string
+  assessment_details?: any[]
 }
 
 function checkPageBreak(doc: any, yPos: number, neededHeight: number) {
@@ -156,15 +157,57 @@ export async function generateIncentiveSlipPDF(data: IncentiveSlipData | Incenti
       startY: 92,
       head: [['Komponen Penilaian', 'Skor', 'Bobot (%)', 'Nilai Tertimbang']],
       body: [
-        ['P1 (Kinerja Utama/Posisi)', slip.p1Score.toFixed(2), `${p1w}%`, slip.p1Weighted.toFixed(2)],
-        ['P2 (Kinerja Tambahan)', slip.p2Score.toFixed(2), `${p2w}%`, slip.p2Weighted.toFixed(2)],
-        ['P3 (Perilaku/Potensi)', slip.p3Score.toFixed(2), `${p3w}%`, slip.p3Weighted.toFixed(2)],
-        [{ content: 'Total Skor Akhir', styles: { fontStyle: 'bold', fillColor: [245, 245, 245] } }, '-', '-', { content: slip.finalScore.toFixed(2), styles: { fontStyle: 'bold', fillColor: [245, 245, 245] } }],
+        ['P1 (Kinerja Utama/Posisi)', slip.p1Score > 1000 ? slip.p1Score.toLocaleString('id-ID') : slip.p1Score.toFixed(2), `${p1w}%`, slip.p1Weighted > 1000 ? slip.p1Weighted.toLocaleString('id-ID') : slip.p1Weighted.toFixed(2)],
+        ['P2 (Kinerja Tambahan)', slip.p2Score > 1000 ? slip.p2Score.toLocaleString('id-ID') : slip.p2Score.toFixed(2), `${p2w}%`, slip.p2Weighted > 1000 ? slip.p2Weighted.toLocaleString('id-ID') : slip.p2Weighted.toFixed(2)],
+        ['P3 (Perilaku/Potensi)', slip.p3Score > 1000 ? slip.p3Score.toLocaleString('id-ID') : slip.p3Score.toFixed(2), `${p3w}%`, slip.p3Weighted > 1000 ? slip.p3Weighted.toLocaleString('id-ID') : slip.p3Weighted.toFixed(2)],
+        [{ content: 'Total Skor Akhir', styles: { fontStyle: 'bold', fillColor: [245, 245, 245] } }, '-', '-', { content: slip.finalScore > 1000 ? slip.finalScore.toLocaleString('id-ID') : slip.finalScore.toFixed(2), styles: { fontStyle: 'bold', fillColor: [245, 245, 245] } }],
       ],
       theme: 'grid',
       headStyles: { fillColor: [44, 62, 80], textColor: 255, fontStyle: 'bold' },
       styles: { fontSize: 9, cellPadding: 3 }
     })
+
+    // === RINCIAN INDIKATOR PENILAIAN ===
+    if (slip.assessment_details && slip.assessment_details.length > 0) {
+      let currentY = (doc as any).lastAutoTable.finalY + 8
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'bold')
+      doc.text('B. RINCIAN INDIKATOR PENILAIAN', 15, currentY)
+      currentY += 4
+
+      autoTable(doc, {
+        startY: currentY,
+        head: [['No', 'Kategori', 'Indikator', 'Realisasi', 'Skor', 'Status']],
+        body: slip.assessment_details.map((d: any, idx: number) => {
+          const statusMarker = d.is_priority ? '[PR]' : '[IX]'
+          const realizationDisplay = d.is_activity ? `${d.realization}` : `${d.realization}%`
+          // If it's activity indexing (non-priority but has value), score is activity_value
+          // Otherwise it's the raw score
+          const scoreDisplay = (d.is_activity && !d.is_priority) ?
+            new Intl.NumberFormat('id-ID').format(d.activity_value || 0) :
+            d.score.toFixed(2)
+
+          return [
+            idx + 1,
+            d.category,
+            d.name,
+            realizationDisplay,
+            scoreDisplay,
+            { content: statusMarker, styles: { fontStyle: 'bold', textColor: d.is_priority ? [239, 68, 68] : [37, 99, 235] } }
+          ]
+        }),
+        theme: 'striped',
+        headStyles: { fillColor: [52, 73, 94], textColor: 255, fontSize: 8 },
+        styles: { fontSize: 8, cellPadding: 2 },
+        columnStyles: {
+          0: { cellWidth: 10 },
+          1: { cellWidth: 25 },
+          3: { halign: 'center' },
+          4: { halign: 'right' },
+          5: { halign: 'center' }
+        }
+      })
+    }
 
     // === RINCIAN PIR (Poin Indeks Rupiah) ===
     let yPos = (doc as any).lastAutoTable.finalY + 8
@@ -173,7 +216,7 @@ export async function generateIncentiveSlipPDF(data: IncentiveSlipData | Incenti
 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(10)
-    doc.text('A. PERHITUNGAN PIR (Poin Indeks Rupiah)', 15, yPos + 1)
+    doc.text('C. PERHITUNGAN PIR (Poin Indeks Rupiah)', 15, yPos + 1)
 
     doc.setFont('helvetica', 'normal')
     // Formatting helper
@@ -228,7 +271,8 @@ export async function generateIncentiveSlipPDF(data: IncentiveSlipData | Incenti
     const tableRows: any[] = []
     tableRows.push(['A.', incentiveLabel, ''])
     tableRows.push(['', '1. Insentif Berbasis Indeks (Total Skor × PIR)', formatCurrency(slip.index_incentive || 0)])
-    tableRows.push(['', '2. Insentif Berbasis Aktivitas Kuantitatif', formatCurrency(slip.totalActivityRupiah || 0)])
+    tableRows.push(['', '2. Insentif Berbasis Prioritas (Direct Payout)', formatCurrency(slip.totalActivityRupiah || 0)])
+
     if (slip.guarantee_fee && slip.guarantee_fee > 0) {
       tableRows.push(['', '3. Guarantee Fee', formatCurrency(slip.guarantee_fee || 0)])
     }
@@ -535,6 +579,12 @@ export async function exportToPDF(options: ReportExportOptions): Promise<Uint8Ar
         adjustment_value: parseNum(item.adjustment_value),
         attendance_deduction: parseNum(item.attendance_deduction),
         other_deductions: parseNum(item.other_deductions),
+        assessment_details: (() => {
+          const raw = item.assessment_details
+          if (Array.isArray(raw)) return raw
+          if (typeof raw === 'string') { try { return JSON.parse(raw) } catch { return [] } }
+          return []
+        })()
       }
     })
     return await generateIncentiveSlipPDF(slips)

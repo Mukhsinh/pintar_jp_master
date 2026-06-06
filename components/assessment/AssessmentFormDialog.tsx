@@ -51,6 +51,8 @@ interface KPIIndicator {
   name: string
   target_value: number
   weight_percentage: number
+  calculation_method: 'indexing' | 'priority'
+  basic_index_value: number
   measurement_unit?: string
   description?: string
   sub_indicators: KPISubIndicator[]
@@ -61,6 +63,7 @@ interface KPICategory {
   category_name: string
   weight_percentage: number
   configuration_style?: 'index' | 'activity'
+  is_weighted?: boolean
   indicators: KPIIndicator[]
 }
 
@@ -193,14 +196,23 @@ export default function AssessmentFormDialog({
     let score = 0
     let derivedRealizationValue = inputRealization
 
-    if (indicator && isMedicalUnit && isActivity) {
-      const tariff = parseFloat((indicator as any).basic_index_value?.toString() || '0')
-      score = inputRealization * tariff
-      derivedRealizationValue = inputRealization // Store raw VOLUME as realization_value
-      achievementPercentage = 100
-    } else {
-      achievementPercentage = calculateAchievement(inputRealization, targetValue)
-      score = calculateScore(achievementPercentage)
+    if (indicator) {
+      const isPriority = indicator.calculation_method === 'priority' || category?.configuration_style === 'activity'
+      const isUnweightedCat = category?.is_weighted === false
+
+      if (isPriority) {
+        const tariff = parseFloat(indicator.basic_index_value?.toString() || '0')
+        score = inputRealization * tariff
+        derivedRealizationValue = inputRealization
+        achievementPercentage = 100
+      } else {
+        achievementPercentage = calculateAchievement(inputRealization, targetValue)
+        // Score logic: if unweighted category, score is achievement, else it's weighted if needed?
+        // Wait, 'score' in t_kpi_assessments for indexing indicators is usually achievement 
+        // because the PIR calculation handles the weighting at the unit level.
+        // Actually, existing code says: score = calculateScore(achievementPercentage)
+        score = calculateScore(achievementPercentage)
+      }
     }
 
     setAssessments(prev => ({
@@ -266,20 +278,18 @@ export default function AssessmentFormDialog({
         totalAchievement = current.achievement_percentage
         sumVolumes = current.realization_value
         sumScores = current.score
-        const category = categories.find(c => c.indicators.some(i => i.id === indicatorId))
-        if (category?.configuration_style === 'activity') {
-          isQuantitativeIndicator = true
-        }
       }
+      const category = categories.find(c => c.indicators.some(i => i.id === indicatorId))
+      const isPriority = indicator && (indicator.calculation_method === 'priority' || category?.configuration_style === 'activity')
 
       return {
         ...prev,
         [indicatorId]: {
           ...current,
-          realization_value: Number(sumVolumes.toFixed(4)), // Store raw VOLUME SUM
+          realization_value: Number(sumVolumes.toFixed(4)),
           sub_assessments: subAssessments,
           achievement_percentage: Number(totalAchievement.toFixed(2)),
-          score: (isMedicalUnit || isQuantitativeIndicator) ? Number(sumScores.toFixed(4)) : calculateScore(totalAchievement)
+          score: isPriority ? Number(sumScores.toFixed(4)) : calculateScore(totalAchievement)
         }
       }
     })
@@ -457,22 +467,34 @@ export default function AssessmentFormDialog({
 
               category.indicators.forEach(indicator => {
                 const assessment = assessments[indicator.id]
-                const indWeight = isMedicalUnit ? 100 : (parseFloat(indicator.weight_percentage.toString()) || 0)
-
-                // Bottom-up Indicator to Category
+                const indWeight = parseFloat(indicator.weight_percentage.toString()) || 0
                 const indTarget = getIndicatorTarget(indicator)
                 const indRealisasi = assessment ? assessment.realization_value : 0
+                const indScore = assessment ? assessment.score : 0
+                const isPriority = indicator.calculation_method === 'priority'
 
-                totalRealisasiKategori += (indRealisasi * (indWeight / 100))
-                totalTargetKategori += (indTarget * (indWeight / 100))
+                if (!isPriority) {
+                  if (category.is_weighted !== false) {
+                    totalRealisasiKategori += (indRealisasi * (indWeight / 100))
+                    totalTargetKategori += (indTarget * (indWeight / 100))
+                  } else {
+                    // Unweighted category: sum indicators as raw achievement vs 100
+                    const ach = indTarget > 0 ? (indRealisasi / indTarget) * 100 : 0
+                    totalRealisasiKategori += ach
+                    totalTargetKategori += 100
+                  }
+                }
               })
 
               const porsiKategori = category.weight_percentage
               let kontribusiAkhir = 0
-              if (isMedicalUnit) {
-                kontribusiAkhir = totalRealisasiKategori // For medical, raw sum is used or logic differs
-              } else if (totalTargetKategori > 0) {
-                kontribusiAkhir = (totalRealisasiKategori / totalTargetKategori) * porsiKategori
+              if (totalTargetKategori > 0) {
+                if (category.is_weighted !== false) {
+                  kontribusiAkhir = (totalRealisasiKategori / totalTargetKategori) * porsiKategori
+                } else {
+                  // For unweighted, the "contribution" is just the average achievement percentage
+                  kontribusiAkhir = (totalRealisasiKategori / totalTargetKategori) * 100
+                }
               }
 
               return (
@@ -524,13 +546,20 @@ export default function AssessmentFormDialog({
             categories.map((category) => (
               <Card key={category.category}>
                 <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
+                  <CardTitle className="flex items-center justify-between text-base">
                     <span>{category.category} - {category.category_name}</span>
-                    {!isMedicalUnit && (
-                      <Badge variant="outline">
-                        Bobot: {category.weight_percentage}%
-                      </Badge>
-                    )}
+                    <div className="flex gap-2">
+                      {category.is_weighted === false && (
+                        <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                          Tanpa Bobot
+                        </Badge>
+                      )}
+                      {!isMedicalUnit && category.is_weighted !== false && (
+                        <Badge variant="outline">
+                          Bobot: {category.weight_percentage}%
+                        </Badge>
+                      )}
+                    </div>
                   </CardTitle>
                   <CardDescription>
                     {category.indicators.length} indikator dalam kategori ini
@@ -556,9 +585,19 @@ export default function AssessmentFormDialog({
                               )}
                             </div>
                             {!isMedicalUnit && (
-                              <Badge variant="outline" className="ml-4">
-                                Bobot: {indicator.weight_percentage}%
-                              </Badge>
+                              <div className="flex gap-2 ml-4">
+                                {indicator.calculation_method === 'priority' ? (
+                                  <Badge variant="default" className="bg-purple-600">
+                                    Prioritas
+                                  </Badge>
+                                ) : (
+                                  category.is_weighted !== false && (
+                                    <Badge variant="outline">
+                                      Bobot: {indicator.weight_percentage}%
+                                    </Badge>
+                                  )
+                                )}
+                              </div>
                             )}
                           </div>
 

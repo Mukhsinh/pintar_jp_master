@@ -3,7 +3,7 @@ import type { Assessment, AssessmentStatus, AssessmentIndicator } from '@/lib/ty
 
 export async function getAvailablePeriods(): Promise<string[]> {
   const supabase = await createClient()
-  
+
   try {
     const { data, error } = await supabase
       .from('t_pool')
@@ -15,7 +15,7 @@ export async function getAvailablePeriods(): Promise<string[]> {
       console.error('Error fetching periods:', error)
       return []
     }
-    
+
     return data?.map(item => item.period) || []
   } catch (error: any) {
     console.error('Exception in getAvailablePeriods:', error)
@@ -25,7 +25,7 @@ export async function getAvailablePeriods(): Promise<string[]> {
 
 export async function getAssessmentStatus(unitId: string, period: string): Promise<AssessmentStatus[]> {
   const supabase = await createClient()
-  
+
   try {
     const { data, error } = await supabase
       .from('v_assessment_status')
@@ -47,7 +47,7 @@ export async function getAssessmentStatus(unitId: string, period: string): Promi
 
 export async function getAssessmentsForEmployee(employeeId: string, period: string): Promise<Assessment[]> {
   const supabase = await createClient()
-  
+
   try {
     const { data, error } = await supabase
       .from('t_kpi_assessments')
@@ -84,7 +84,7 @@ export async function getAssessmentIndicators(employeeId: string, period: string
 
     const { data: categories, error: categoriesError } = await supabase
       .from('m_kpi_categories')
-      .select('id, name, type')
+      .select('id, name, type, configuration_style, is_weighted')
       .eq('unit_id', employee.unit_id)
       .eq('is_active', true)
 
@@ -97,7 +97,7 @@ export async function getAssessmentIndicators(employeeId: string, period: string
 
     const { data: indicators, error: indicatorsError } = await supabase
       .from('m_kpi_indicators')
-      .select('id, name, target_value, weight_percentage, category_id')
+      .select('id, name, target_value, weight_percentage, category_id, calculation_method, basic_index_value')
       .eq('is_active', true)
       .in('category_id', categories?.map(c => c.id) || [])
 
@@ -132,8 +132,47 @@ export async function upsertAssessment(assessment: Assessment): Promise<Assessme
   const supabase = await createClient()
 
   try {
-    const achievement = assessment.target_value === 0 ? 100 : (assessment.realization_value / assessment.target_value) * 100
-    const score = (achievement * assessment.weight_percentage) / 100
+    // 1. Fetch indicator & category metadata for flags
+    const { data: indicator, error: indError } = await supabase
+      .from('m_kpi_indicators')
+      .select(`
+        *,
+        m_kpi_categories (
+          configuration_style,
+          is_weighted
+        )
+      `)
+      .eq('id', assessment.indicator_id)
+      .single()
+
+    if (indError || !indicator) {
+      console.error('Indicator not found for assessment:', indError)
+      return null
+    }
+
+    const category = indicator.m_kpi_categories
+    const isActivity = category?.configuration_style === 'activity' || indicator.calculation_method === 'priority'
+    const isUnweighted = category?.is_weighted === false
+
+    const realization = Number(assessment.realization_value) || 0
+    const target = Number(assessment.target_value) || 1
+    const tariff = Number(indicator.basic_index_value) || 0
+
+    // Achievement percentage calculation
+    const achievement = target === 0 ? 100 : (realization / target) * 100
+
+    // Score calculation:
+    // 1. If Activity/Priority: Volume * Tariff (no weight)
+    // 2. If Unweighted Category: Achievement (no weight)
+    // 3. Otherwise: (Achievement * Weight) / 100
+    let score = 0
+    if (isActivity) {
+      score = realization * tariff
+    } else if (isUnweighted) {
+      score = achievement
+    } else {
+      score = (achievement * assessment.weight_percentage) / 100
+    }
 
     const assessmentData = {
       ...assessment,

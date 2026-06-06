@@ -184,7 +184,31 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({ success: true, data })
+    // Sanitize data before sending to client:
+    // Strip any non-primitive fields (arrays/objects) that would crash React rendering.
+    // Fields like assessment_details, p*_breakdown are only needed server-side.
+    const sanitizedData = data.map((row: any) => {
+      const clean: any = {}
+      for (const key in row) {
+        const value = row[key]
+        if (value === null || value === undefined) {
+          clean[key] = value
+        } else if (Array.isArray(value) || typeof value === 'object') {
+          // Serialize non-primitive fields (arrays/objects) to Prevent React crashes
+          // We only do this for fields that are actually objects/arrays to keep it performant
+          try {
+            clean[key] = JSON.stringify(value)
+          } catch (e) {
+            clean[key] = '[Complex Object]'
+          }
+        } else {
+          clean[key] = value
+        }
+      }
+      return clean
+    })
+
+    return NextResponse.json({ success: true, data: sanitizedData })
   } catch (error: any) {
     console.error('Report generation error:', error)
     return NextResponse.json(
@@ -256,10 +280,12 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
         weight_percentage,
         basic_index_value,
         target_value,
+        calculation_method,
         m_kpi_categories!inner (
           category,
           weight_percentage,
-          configuration_style
+          configuration_style,
+          is_weighted
         )
       )
     `)
@@ -279,7 +305,18 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
     const assessmentDetails: any[] = []
 
     const calcCategoryScore = (categoryName: string) => {
-      const catAssessments = empAssessments.filter((a: any) => a.m_kpi_indicators?.m_kpi_categories?.category === categoryName)
+      // Robust matching: Try exact match, then case-insensitive partial match
+      let catAssessments = empAssessments.filter((a: any) =>
+        a.m_kpi_indicators?.m_kpi_categories?.category === categoryName
+      )
+
+      if (catAssessments.length === 0) {
+        catAssessments = empAssessments.filter((a: any) => {
+          const cat = (a.m_kpi_indicators?.m_kpi_categories?.category || '').toUpperCase()
+          return cat.includes(categoryName.toUpperCase())
+        })
+      }
+
       if (catAssessments.length === 0) return 0
 
       // Weights and styles are category-specific. We use the first one found for this category.
@@ -297,6 +334,24 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
         const indName = a.m_kpi_indicators?.name || '-'
         const indWeight = parseFloat(a.weight_percentage) || 0
         const indTarget = parseFloat(a.target_value) || 100
+        const calcMethod = a.m_kpi_indicators?.calculation_method || 'indexing'
+        const isWeightedCat = a.m_kpi_indicators?.m_kpi_categories?.is_weighted !== false
+
+        const isPriority = calcMethod === 'priority'
+        const isActivityIndexing = (isActivityStyle || basicVal > 0) && !isPriority
+
+        // For priority indicators: Use the pre-calculated score from the database directly. 
+        // This is critical because some priority indicators (e.g., 'Profesional Grade') store the 
+        // direct Rupiah value in realization_value (e.g., 10,000,000), NOT a volume count.
+        // If we computed realization × basic_index_value, we'd get 10M × 1M = 10 trillion (WRONG).
+        // The score field already contains the correct Rupiah amount.
+        // For activity-indexing indicators: Use volume × tarif (realization × basic_index_value).
+        let activityValue = 0
+        if (isPriority) {
+          activityValue = Number(indicatorScore) || (Number(indRealization) * Number(basicVal))
+        } else if (isActivityIndexing) {
+          activityValue = Number(indRealization) * Number(basicVal)
+        }
 
         // Track detail for slip
         assessmentDetails.push({
@@ -307,30 +362,48 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
           realization: indRealization,
           score: indicatorScore,
           basic_value: basicVal,
-          is_activity: isActivityStyle || basicVal > 0
+          calculation_method: calcMethod,
+          is_weighted: isWeightedCat && calcMethod === 'indexing',
+          is_activity: isPriority || isActivityIndexing,
+          activity_value: activityValue,
+          is_priority: isPriority
         })
 
-        // Hybrid detection: if category is 'activity' OR indicator has a basic_index_value (Tarif)
-        if (isActivityStyle || basicVal > 0) {
-          // The `score` field in t_kpi_assessments already stores the correct 
-          // calculated value (Volume × Tariff) from the assessment form.
-          // We use it directly to avoid double-multiplication errors.
-          totalActivityRupiah += indicatorScore
-        } else if (isMedicalUnit) {
-          totalRealisasi += indRealization
-        } else {
-          const indWeight = parseFloat(a.weight_percentage) || 0
-          const indTarget = parseFloat(a.target_value) || 100
-          totalRealisasi += indRealization * (indWeight / 100)
-          totalTarget += indTarget * (indWeight / 100)
+        // 1. Priority indicators: Deducted from pool first (Summed in totalActivityRupiah)
+        if (isPriority) {
+          totalActivityRupiah = Number(totalActivityRupiah) + Number(activityValue)
+        }
+        // 2. Activity-based Indexing: Contribute to merit score as absolute values
+        else if (isActivityIndexing) {
+          totalRealisasi = Number(totalRealisasi) + Number(activityValue)
+        }
+        // 3. Standard Indexing indicators: Contribute to merit-based distribution via achievement %
+        else {
+          if (isMedicalUnit) {
+            totalRealisasi = Number(totalRealisasi) + Number(indRealization)
+          } else {
+            // Standard point calculation
+            if (isWeightedCat) {
+              totalRealisasi = Number(totalRealisasi) + (Number(indRealization) * (Number(indWeight) / 100))
+              totalTarget = Number(totalTarget) + (Number(indTarget) * (Number(indWeight) / 100))
+            } else {
+              // Unweighted: contribute raw achievement percentage
+              const achievement = Number(indTarget) === 0 ? 100 : (Number(indRealization) / Number(indTarget)) * 100
+              totalRealisasi = Number(totalRealisasi) + achievement
+              totalTarget = Number(totalTarget) + 100 // Target for an indicator in an unweighted category is 100%
+            }
+          }
         }
       }
 
-      if (isActivityStyle) {
-        return 0 // Activity style categories don't contribute to index scores
-      }
+      // Note: We no longer return 0 for activity styles, because activity-based indexing
+      // (like P2 in some contexts) now contributes to the P-scores.
+
 
       if (isMedicalUnit) {
+        return totalRealisasi
+      } else if (!catMeta.is_weighted) {
+        // Return sum of achievement points for unweighted categories
         return totalRealisasi
       } else if (totalTarget > 0) {
         return (totalRealisasi / totalTarget) * categoryWeight
@@ -345,7 +418,7 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
     return {
       p1, p2, p3,
       totalScore: Number((p1 + p2 + p3).toFixed(2)),
-      totalActivityRupiah,
+      totalActivityRupiah: Number(totalActivityRupiah),
       assessmentDetails
     }
   }
@@ -366,9 +439,9 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
 
     employeeScoresMap.set(emp.id, { emp, ...scores })
 
-    unitTotalScoresMap.set(uId, (unitTotalScoresMap.get(uId) || 0) + scores.totalScore)
-    unitTotalActivityMap.set(uId, (unitTotalActivityMap.get(uId) || 0) + scores.totalActivityRupiah)
-    unitEmployeeCountMap.set(uId, (unitEmployeeCountMap.get(uId) || 0) + 1)
+    unitTotalScoresMap.set(uId, Number(unitTotalScoresMap.get(uId) || 0) + Number(scores.totalScore))
+    unitTotalActivityMap.set(uId, Number(unitTotalActivityMap.get(uId) || 0) + Number(scores.totalActivityRupiah))
+    unitEmployeeCountMap.set(uId, Number(unitEmployeeCountMap.get(uId) || 0) + 1)
   }
 
   // --- Calculate PIR per unit and save audit trail ---
@@ -459,7 +532,7 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
 
     // Formula: (Total Skor x PIR) + Total Activity Rupiah
     const indexIncentive = totalScore * pir
-    let grossIncentive = indexIncentive + totalActivityRupiah
+    let grossIncentive = Number(indexIncentive) + Number(totalActivityRupiah)
 
     let guaranteeFee = 0
     if (isMedical) {
@@ -527,10 +600,10 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
       total_activity_rupiah: totalActivityRupiah,
       index_incentive: indexIncentive,
       guarantee_fee: guaranteeFee,
-      total_skor_unit: totalSkorUnit,
-      unit_proportion: unitProp,
-      unit_allocation: uId ? (netPool * (unitProp / 100)) : 0,
-      unit_total_activity: uId ? (unitTotalActivityMap.get(uId) || 0) : 0,
+      total_skor_unit: Number(totalSkorUnit),
+      unit_proportion: Number(unitProp),
+      unit_allocation: uId ? (Number(netPool) * (Number(unitProp) / 100)) : 0,
+      unit_total_activity: uId ? Number(unitTotalActivityMap.get(uId) || 0) : 0,
       gross_incentive: grossIncentive,
       tax_amount: taxCheck.amount,
       tax_detail: taxCheck.text,
@@ -569,9 +642,11 @@ async function generateKPIAchievementReport(supabase: any, period: string, unitI
         target_value,
         weight_percentage,
         basic_index_value,
+        calculation_method,
         m_kpi_categories (
           category,
-          configuration_style
+          configuration_style,
+          is_weighted
         )
       )
     `)
@@ -623,7 +698,10 @@ async function generateKPIAchievementReport(supabase: any, period: string, unitI
 
     const basicVal = parseFloat(row.m_kpi_indicators.basic_index_value) || 0
     const catStyle = row.m_kpi_indicators.m_kpi_categories?.configuration_style
-    const isActivity = catStyle === 'activity' || basicVal > 0
+    const calcMethod = row.m_kpi_indicators.calculation_method || 'indexing'
+    const isWeightedCat = row.m_kpi_indicators.m_kpi_categories?.is_weighted !== false
+
+    const isActivity = catStyle === 'activity' || calcMethod === 'priority' || basicVal > 0
 
     if (existing) {
       existing.count++
@@ -637,6 +715,7 @@ async function generateKPIAchievementReport(supabase: any, period: string, unitI
         employee_name: empName,
         unit_name: unitName,
         is_activity: isActivity,
+        is_weighted: isWeightedCat && !isActivity,
         count: 1,
         sum_realization: Number(row.realization_value || 0),
         sum_target_value: Number(row.target_value || row.m_kpi_indicators.target_value || 0),
@@ -650,7 +729,14 @@ async function generateKPIAchievementReport(supabase: any, period: string, unitI
     const target = Number((item.sum_target_value / item.count).toFixed(2));
     const achievement_percentage = target > 0 ? (realization / target) * 100 : 0;
 
-    let score = (achievement_percentage / 100) * item.weight;
+    let score = 0;
+    if (item.is_activity) {
+      score = realization // For priority/activity, score is basically the volume in this report context
+    } else if (item.is_weighted) {
+      score = (achievement_percentage / 100) * item.weight;
+    } else {
+      score = achievement_percentage;
+    }
 
     const gap = realization - target;
 
@@ -697,13 +783,16 @@ async function generateUnitComparisonReport(supabase: any, period: string, unitI
       unitMap.set(uName, {
         unit_name: uName,
         total_score_sum: 0,
+        total_activity_sum: 0,
         total_incentive_sum: 0,
-        employee_count: 0
+        employee_count: 0,
+        pir_value: row.pir_value || 0
       })
     }
 
     const u = unitMap.get(uName)
     u.total_score_sum += Number(row.total_score || 0)
+    u.total_activity_sum += Number(row.total_activity || 0)
     u.total_incentive_sum += Number(row.net_incentive || 0)
     u.employee_count++
   })
@@ -711,8 +800,12 @@ async function generateUnitComparisonReport(supabase: any, period: string, unitI
   // Format Array
   return Array.from(unitMap.values()).map(u => ({
     unit_name: u.unit_name,
-    average_score: u.employee_count > 0 ? (u.total_score_sum / u.employee_count).toFixed(2) : '0.00',
-    total_incentive: u.total_incentive_sum.toFixed(2),
+    average_score: u.employee_count > 0 ? (u.total_score_sum / u.employee_count) : 0,
+    average_priority: u.employee_count > 0 ? (u.total_activity_sum / u.employee_count) : 0,
+    total_unit_score: u.total_score_sum,
+    total_unit_activity: u.total_activity_sum,
+    pir_value: u.pir_value,
+    total_incentive: u.total_incentive_sum,
     employee_count: u.employee_count
   }))
 }
@@ -740,24 +833,30 @@ async function generateEmployeeSlipReport(supabase: any, period: string, unitId?
       return details
         .filter((d: any) => d.category === category)
         .map((d: any) => {
-          if (d.is_activity) {
-            const actRupiah = d.basic_value > 0 ? (d.realization * d.basic_value) : d.score
+          const isPriority = d.is_priority || d.calculation_method === 'priority'
+
+          if (isPriority) {
+            // Use the pre-calculated activity_value (which correctly uses the score field for priority)
+            const actRupiah = Number(d.activity_value) || Number(d.score) || 0
             return {
               indicator: d.name,
               target: '-',
-              weight: d.weight + '%',
+              weight: 'N/A',
               achievement: d.realization.toString(),
               score: actRupiah.toFixed(2),
               is_activity: true,
               tarif: d.basic_value,
             }
           }
+
+          const achievementVal = (Number(d.target) > 0 ? ((Number(d.realization) / Number(d.target)) * 100) : 0)
+
           return {
-            indicator: d.name,
-            target: d.target.toFixed(2),
-            weight: d.weight + '%',
-            achievement: (d.target > 0 ? ((d.realization / d.target) * 100) : 0).toFixed(2) + '%',
-            score: d.score.toFixed(2),
+            indicator: d.name || '-',
+            target: typeof d.target === 'number' ? d.target.toFixed(2) : (parseFloat(d.target) || 0).toFixed(2),
+            weight: d.is_weighted ? (Number(d.weight || 0) + '%') : 'N/A',
+            achievement: achievementVal.toFixed(2) + '%',
+            score: typeof d.score === 'number' ? d.score.toFixed(2) : (parseFloat(d.score) || 0).toFixed(2),
             is_activity: false,
           }
         })

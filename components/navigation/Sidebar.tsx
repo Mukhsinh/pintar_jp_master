@@ -24,7 +24,6 @@ import {
   X,
   Bell,
   ClipboardCheck,
-  Banknote
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -77,7 +76,6 @@ const iconMap: Record<string, React.ElementType> = {
   User,
   Bell,
   ClipboardCheck,
-  Banknote,
 }
 
 const ALL_MENU_ITEMS: MenuItem[] = [
@@ -85,7 +83,7 @@ const ALL_MENU_ITEMS: MenuItem[] = [
   { id: 'users', label: 'Manajemen Pengguna', path: '/users', icon: 'Users' },
   { id: 'pegawai', label: 'Data Pegawai', path: '/pegawai', icon: 'UserCheck' },
   { id: 'units', label: 'Unit Kerja', path: '/units', icon: 'Building2' },
-  { id: 'master-tarif', label: 'Master Tarif', path: '/master-tarif', icon: 'Banknote' },
+  // { id: 'master-tarif', label: 'Master Tarif', path: '/master-tarif', icon: 'Banknote' }, // hidden
   { id: 'kpi-config', label: 'Konfigurasi KPI', path: '/kpi-config', icon: 'Target' },
   { id: 'pool', label: 'Pool Insentif', path: '/pool', icon: 'Wallet' },
   { id: 'assessment', label: 'Penilaian KPI', path: '/assessment', icon: 'ClipboardCheck' },
@@ -178,32 +176,40 @@ export default function Sidebar() {
     }
   }, [isCollapsed, mounted])
 
-  // Load sidebar data once user is ready
+  // Load sidebar data once user is ready — all in parallel for speed
   useEffect(() => {
     if (!user) return
       ; (async () => {
         try {
           const supabase = createClient()
 
-          const { data: s } = await supabase
-            .from('t_settings').select('value').eq('key', 'company_info').maybeSingle()
-          if (s) setCompanyInfo(s.value)
+          // Check localStorage cache for company info (valid 10 min)
+          let companyInfoData = null
+          try {
+            const cached = localStorage.getItem('sidebar-company-info')
+            if (cached) {
+              const { value, ts } = JSON.parse(cached)
+              if (Date.now() - ts < 10 * 60 * 1000) companyInfoData = value
+            }
+          } catch { }
 
-          if (user.role !== 'superadmin' && user.unit_id) {
-            const { data: u } = await supabase
-              .from('m_units').select('name').eq('id', user.unit_id).single()
-            if (u) setUnitName(u.name || '')
+          // Run all fetches in parallel
+          const [settingsRes, unitRes, notifRes] = await Promise.all([
+            companyInfoData ? Promise.resolve(null) : supabase.from('t_settings').select('value').eq('key', 'company_info').maybeSingle(),
+            (user.role !== 'superadmin' && user.unit_id)
+              ? supabase.from('m_units').select('name').eq('id', user.unit_id).single()
+              : Promise.resolve(null),
+            supabase.from('t_notification').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('read', false),
+          ])
+
+          if (settingsRes?.data) {
+            companyInfoData = settingsRes.data.value
+            try { localStorage.setItem('sidebar-company-info', JSON.stringify({ value: companyInfoData, ts: Date.now() })) } catch { }
           }
-
-          const { count } = await supabase
-            .from('t_notification')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', user.id)
-            .eq('read', false)
-          setUnreadCount(count || 0)
-        } catch (e) {
-          console.error('Sidebar load error:', e)
-        }
+          if (companyInfoData) setCompanyInfo(companyInfoData)
+          if (unitRes?.data) setUnitName(unitRes.data.name || '')
+          setUnreadCount(notifRes?.count || 0)
+        } catch { }
       })()
   }, [user])
 

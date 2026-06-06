@@ -1,5 +1,3 @@
-'use client'
-
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -13,7 +11,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import type { KPICategory, KPIIndicator } from '@/lib/types/kpi.types'
+import { Plus, Trash2, AlertCircle } from 'lucide-react'
+import type { KPICategory, KPIIndicator, KPISubIndicator, ScoringCriterion } from '@/lib/types/kpi.types'
+import { createSubIndicator, updateSubIndicator } from '@/app/actions/sub-indicator-actions'
+import { Textarea } from '@/components/ui/textarea'
 
 interface IndicatorFormDialogProps {
   open: boolean
@@ -24,6 +25,22 @@ interface IndicatorFormDialogProps {
   onSuccess: () => void
   isMedicalUnit?: boolean
 }
+
+const SERVICE_TYPES = [
+  'Garansi Fee',
+  'Rawat Jalan',
+  'Rawat Inap',
+  'IBS',
+  'Anestesi IBS',
+  'Cathlab',
+  'Patologi Klinik',
+  'Patologi Anatomi',
+  'Mikrobiologi Klinik',
+  'Radiologi',
+  'Farmasi',
+  'Nutrisionis',
+  'Keperawatan'
+]
 
 export default function IndicatorFormDialog({
   open,
@@ -36,45 +53,120 @@ export default function IndicatorFormDialog({
 }: IndicatorFormDialogProps) {
   const supabase = createClient()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [hasSubIndicators, setHasSubIndicators] = useState(false)
+  const [existingSubIndicator, setExistingSubIndicator] = useState<KPISubIndicator | null>(null)
+
   const [formData, setFormData] = useState({
     code: '',
     name: '',
-    target_value: '100.00',
     weight_percentage: '',
-    measurement_unit: '',
     description: '',
-    basic_index_value: '0.0000'
+    basic_index_value: '0.0000',
+    calculation_method: 'indexing' as 'indexing' | 'priority',
+    // Sub-indicator fields (used if hasSubIndicators is false)
+    measurement_type: 'scoring' as 'scoring' | 'quantitative',
+    scoring_criteria: [
+      { score: 20, label: 'Sangat Kurang' },
+      { score: 40, label: 'Kurang' },
+      { score: 60, label: 'Cukup' },
+      { score: 80, label: 'Baik' },
+      { score: 100, label: 'Sangat Baik' }
+    ] as ScoringCriterion[],
+    unit_tariff: '',
+    base_index_value: '',
+    service_types: [] as string[],
+    measurement_unit: ''
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   useEffect(() => {
+    async function checkSubIndicators() {
+      if (indicator && open) {
+        const { data } = await supabase
+          .from('m_kpi_sub_indicators')
+          .select('*')
+          .eq('indicator_id', indicator.id)
+          .eq('is_active', true)
+
+        if (data && data.length > 0) {
+          if (data.length === 1) {
+            setHasSubIndicators(false)
+            setExistingSubIndicator(data[0])
+            setFormData(prev => ({
+              ...prev,
+              measurement_type: (data[0].measurement_type as 'scoring' | 'quantitative') || 'scoring',
+              scoring_criteria: data[0].scoring_criteria || prev.scoring_criteria,
+              unit_tariff: data[0].unit_tariff?.toString() || '',
+              base_index_value: data[0].base_index_value?.toString() || '',
+              service_types: data[0].service_types || [],
+              measurement_unit: data[0].measurement_unit || ''
+            }))
+          } else {
+            setHasSubIndicators(true)
+            setExistingSubIndicator(null)
+          }
+        } else {
+          setHasSubIndicators(false)
+          setExistingSubIndicator(null)
+        }
+      } else {
+        setHasSubIndicators(false)
+        setExistingSubIndicator(null)
+      }
+    }
+
     if (indicator) {
       setFormData({
         code: indicator.code,
         name: indicator.name,
-        target_value: indicator.target_value.toString(),
         weight_percentage: indicator.weight_percentage.toString(),
-        measurement_unit: indicator.measurement_unit || '',
         description: indicator.description || '',
-        basic_index_value: indicator.basic_index_value?.toString() || '0.0000'
+        basic_index_value: indicator.basic_index_value?.toString() || '0.0000',
+        calculation_method: (indicator.calculation_method as 'indexing' | 'priority') || 'indexing',
+        measurement_type: 'scoring',
+        scoring_criteria: [
+          { score: 20, label: 'Sangat Kurang' },
+          { score: 40, label: 'Kurang' },
+          { score: 60, label: 'Cukup' },
+          { score: 80, label: 'Baik' },
+          { score: 100, label: 'Sangat Baik' }
+        ],
+        unit_tariff: '',
+        base_index_value: '',
+        service_types: [],
+        measurement_unit: ''
       })
+      checkSubIndicators()
     } else {
       setFormData({
         code: '',
         name: '',
-        target_value: '100.00',
         weight_percentage: '',
-        measurement_unit: '',
         description: '',
-        basic_index_value: '0.0000'
+        basic_index_value: '0.0000',
+        calculation_method: 'indexing',
+        measurement_type: 'scoring',
+        scoring_criteria: [
+          { score: 20, label: 'Sangat Kurang' },
+          { score: 40, label: 'Kurang' },
+          { score: 60, label: 'Cukup' },
+          { score: 80, label: 'Baik' },
+          { score: 100, label: 'Sangat Baik' }
+        ],
+        unit_tariff: '',
+        base_index_value: '',
+        service_types: [],
+        measurement_unit: ''
       })
+      setHasSubIndicators(false)
+      setExistingSubIndicator(null)
     }
     setErrors({})
-  }, [indicator, open])
+  }, [indicator, open, supabase])
 
   function getTotalWeightInfo(): { total: number; isValid: boolean; message: string } {
     const weight = parseFloat(formData.weight_percentage) || 0
-    const others = existingIndicators.filter(i => i.id !== indicator?.id)
+    const others = existingIndicators.filter(i => i.id !== indicator?.id && i.calculation_method !== 'priority')
     const otherWeightsSum = others.reduce((sum, i) => sum + Number(i.weight_percentage), 0)
     const totalWeight = otherWeightsSum + weight
     const isValid = Math.abs(totalWeight - 100) < 0.01
@@ -88,63 +180,86 @@ export default function IndicatorFormDialog({
     }
   }
 
+  function addScoringCriterion() {
+    const newCriteria = [...formData.scoring_criteria]
+    const lastScore = newCriteria.length > 0 ? newCriteria[newCriteria.length - 1].score : 0
+    newCriteria.push({
+      score: lastScore + 20,
+      label: `Kriteria ${newCriteria.length + 1}`
+    })
+    setFormData({ ...formData, scoring_criteria: newCriteria })
+  }
+
+  function removeScoringCriterion(index: number) {
+    if (formData.scoring_criteria.length <= 1) return
+    const newCriteria = formData.scoring_criteria.filter((_, i) => i !== index)
+    setFormData({ ...formData, scoring_criteria: newCriteria })
+  }
+
+  function updateScoringCriterion(index: number, field: 'score' | 'label', value: string | number) {
+    const newCriteria = [...formData.scoring_criteria]
+    if (field === 'score') {
+      newCriteria[index].score = typeof value === 'string' ? parseFloat(value) || 0 : value
+    } else {
+      newCriteria[index].label = value.toString()
+    }
+    setFormData({ ...formData, scoring_criteria: newCriteria })
+  }
+
   function validateForm(): boolean {
     const newErrors: Record<string, string> = {}
-
-    if (!formData.code.trim()) {
-      newErrors.code = 'Kode indikator wajib diisi'
-    } else {
-      // Check if code already exists (only for new indicators)
-      if (!indicator) {
-        const codeExists = existingIndicators.some(i => i.code === formData.code.trim())
-        if (codeExists) {
-          newErrors.code = 'Kode indikator sudah ada dalam kategori ini'
-        }
-      }
-    }
 
     if (!formData.name.trim()) {
       newErrors.name = 'Nama indikator wajib diisi'
     }
 
-    if (!formData.target_value) {
-      newErrors.target_value = category?.configuration_style === 'activity'
-        ? 'Target Volume wajib diisi'
-        : 'Nilai target wajib diisi'
-    } else {
-      const target = parseFloat(formData.target_value)
-      if (isNaN(target) || target <= 0) {
-        newErrors.target_value = 'Nilai target harus lebih besar dari 0'
-      }
-    }
-
-    if (!isMedicalUnit && !formData.weight_percentage) {
-      newErrors.weight_percentage = category?.configuration_style === 'activity'
-        ? 'Poin Indeks wajib diisi'
-        : 'Persentase bobot wajib diisi'
-    } else if (!isMedicalUnit) {
-      const weight = parseFloat(formData.weight_percentage)
-      if (isNaN(weight) || weight <= 0) {
-        newErrors.weight_percentage = 'Bobot harus lebih besar dari 0'
+    if (category?.is_weighted !== false && formData.calculation_method === 'indexing') {
+      if (!formData.weight_percentage) {
+        newErrors.weight_percentage = 'Persentase bobot wajib diisi'
       } else {
-        // Check if total weight would exceed 100%
-        const otherIndicators = existingIndicators.filter(i => i.id !== indicator?.id)
-        const otherWeightsSum = otherIndicators.reduce((sum, i) => sum + Number(i.weight_percentage), 0)
-        const totalWeight = otherWeightsSum + weight
+        const weight = parseFloat(formData.weight_percentage)
+        if (isNaN(weight) || weight <= 0) {
+          newErrors.weight_percentage = 'Bobot harus lebih besar dari 0'
+        } else {
+          const otherIndicators = existingIndicators.filter(
+            i => i.id !== indicator?.id && i.calculation_method === 'indexing'
+          )
+          const otherWeightsSum = otherIndicators.reduce((sum, i) => sum + Number(i.weight_percentage), 0)
+          const totalWeight = otherWeightsSum + weight
 
-        if (totalWeight > 100.01) { // Allow small floating point tolerance
-          newErrors.weight_percentage = `Total bobot akan menjadi ${totalWeight.toFixed(2)}% (maksimal 100%)`
+          if (totalWeight > 100.01) {
+            newErrors.weight_percentage = `Total bobot akan menjadi ${totalWeight.toFixed(2)}% (maksimal 100%)`
+          }
         }
       }
     }
 
-    if (category?.configuration_style === 'activity') {
-      if (!formData.basic_index_value) {
-        newErrors.basic_index_value = 'Nilai Dasar Indeks wajib diisi'
-      } else {
-        const iv = parseFloat(formData.basic_index_value)
-        if (isNaN(iv) || iv <= 0) {
-          newErrors.basic_index_value = 'Nilai Dasar Indeks harus lebih besar dari 0'
+    if (formData.calculation_method === 'priority' || category?.configuration_style === 'activity') {
+      if (!formData.basic_index_value || parseFloat(formData.basic_index_value) <= 0) {
+        newErrors.basic_index_value = 'Tarif dasar wajib diisi dan lebih besar dari 0'
+      }
+    }
+
+    if (!hasSubIndicators) {
+      if (formData.measurement_type === 'scoring') {
+        if (formData.scoring_criteria.length === 0) {
+          newErrors.scoring_criteria = 'Minimal harus ada satu kriteria penilaian'
+        } else {
+          formData.scoring_criteria.forEach((criterion, index) => {
+            if (isNaN(criterion.score) || criterion.score < 0) {
+              newErrors[`score_${index}`] = `Skor kriteria ${index + 1} harus berupa angka positif`
+            }
+            if (!criterion.label.trim()) {
+              newErrors[`label_${index}`] = `Label kriteria ${index + 1} wajib diisi`
+            }
+          })
+        }
+      } else if (formData.measurement_type === 'quantitative') {
+        if (!formData.base_index_value || parseFloat(formData.base_index_value.toString()) <= 0) {
+          newErrors.base_index_value_sub = 'Tarif Dasar / Nilai Indeks harus lebih besar dari 0'
+        }
+        if (isMedicalUnit && formData.service_types.length === 0) {
+          newErrors.service_types = 'Minimal harus ada satu jenis layanan yang dipilih'
         }
       }
     }
@@ -163,36 +278,62 @@ export default function IndicatorFormDialog({
 
     try {
       const data = {
-        category_id: indicator?.category_id || category?.id,
-        code: formData.code.trim(),
+        category_id: indicator?.category_id || category?.id!,
+        code: formData.code.trim() || undefined,
         name: formData.name.trim(),
-        target_value: parseFloat(formData.target_value),
-        weight_percentage: isMedicalUnit ? 0 : parseFloat(formData.weight_percentage),
-        measurement_unit: formData.measurement_unit.trim() || null,
+        target_value: 0,
+        weight_percentage: (category?.is_weighted === false || formData.calculation_method === 'priority') ? 0 : parseFloat(formData.weight_percentage),
+        measurement_unit: null,
         description: formData.description.trim() || null,
         is_active: true,
-        basic_index_value: category?.configuration_style === 'activity' ? parseFloat(formData.basic_index_value) : null
+        basic_index_value: (formData.calculation_method === 'priority' || category?.configuration_style === 'activity') ? parseFloat(formData.basic_index_value) : null,
+        calculation_method: formData.calculation_method
       }
 
+      let indicatorId = indicator?.id
       if (indicator) {
-        // Update existing indicator
         const { error } = await supabase
           .from('m_kpi_indicators')
           .update(data)
           .eq('id', indicator.id)
 
         if (error) throw error
-
-        // Trigger recalculation for current period
-        // This would be handled by a separate calculation service
-        console.log('Indicator updated, recalculation needed')
       } else {
-        // Create new indicator
-        const { error } = await supabase
+        const { data: newIndicator, error } = await supabase
           .from('m_kpi_indicators')
           .insert(data)
+          .select()
+          .single()
 
         if (error) throw error
+        indicatorId = newIndicator.id
+      }
+
+      if (!hasSubIndicators && indicatorId) {
+        const subData = {
+          indicator_id: indicatorId,
+          name: formData.name.trim(),
+          description: formData.description.trim() || null,
+          weight_percentage: 100,
+          target_value: 0,
+          measurement_unit: formData.measurement_type === 'quantitative' ? formData.measurement_unit : null,
+          scoring_criteria: formData.scoring_criteria,
+          measurement_type: formData.measurement_type,
+          unit_tariff: formData.unit_tariff ? parseFloat(formData.unit_tariff) : 0,
+          base_index_value: formData.base_index_value ? parseFloat(formData.base_index_value) : 0,
+          service_types: formData.service_types
+        }
+
+        let subResult
+        if (existingSubIndicator) {
+          subResult = await updateSubIndicator(existingSubIndicator.id, subData as any)
+        } else {
+          subResult = await createSubIndicator(subData as any)
+        }
+
+        if (!subResult.success) {
+          throw new Error(subResult.error)
+        }
       }
 
       onSuccess()
@@ -217,7 +358,6 @@ export default function IndicatorFormDialog({
           </DialogHeader>
 
           <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
-            {/* Indicator Code */}
             <div className="space-y-2">
               <Label htmlFor="code">Kode Indikator *</Label>
               <Input
@@ -232,46 +372,56 @@ export default function IndicatorFormDialog({
               )}
             </div>
 
-            {/* Indicator Name */}
             <div className="space-y-2">
-              <Label htmlFor="name">Nama Indikator *</Label>
+              <Label htmlFor="ind_name">Nama Indikator *</Label>
               <Input
-                id="name"
+                id="ind_name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="contoh: Jumlah Pasien Rawat Jalan"
+                placeholder="contoh: Kedisiplinan Kerja"
               />
               {errors.name && (
                 <p className="text-sm text-red-600">{errors.name}</p>
               )}
             </div>
 
-            {/* Target Value */}
-            <div className="space-y-2">
-              <Label htmlFor="target_value">
-                {category?.configuration_style === 'activity' ? 'Target Volume *' : 'Nilai Target *'}
-              </Label>
-              <Input
-                id="target_value"
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.target_value}
-                onChange={(e) => setFormData({ ...formData, target_value: e.target.value })}
-                placeholder={category?.configuration_style === 'activity' ? "contoh: 1500" : "contoh: 100.00"}
-              />
-              {errors.target_value && (
-                <p className="text-sm text-red-600">{errors.target_value}</p>
-              )}
-              <p className="text-xs text-gray-500">
-                {category?.configuration_style === 'activity'
-                  ? 'Target volume aktivitas bulanan untuk indikator ini'
-                  : 'Nilai target default untuk indikator ini'}
+            <div className="space-y-2 p-3 bg-gray-50 rounded-lg border">
+              <Label className="text-sm font-semibold">Terdapat Sub Indikator?</Label>
+              <select
+                value={hasSubIndicators ? 'true' : 'false'}
+                onChange={(e) => setHasSubIndicators(e.target.value === 'true')}
+                className="w-full mt-2 px-3 py-2 border rounded-md"
+                disabled={!!indicator && hasSubIndicators}
+              >
+                <option value="false">Tidak Ada (Satu Nilai)</option>
+                <option value="true">Ada Sub Indikator</option>
+              </select>
+              <p className="text-[10px] text-gray-500 italic mt-1">
+                {hasSubIndicators
+                  ? 'Anda perlu menambahkan sub-indikator secara manual setelah membuat indikator ini.'
+                  : 'Sistem akan otomatis membuat sub-indikator tunggal dengan konfigurasi di bawah ini.'}
               </p>
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="calculation_method">Metode Kalkulasi *</Label>
+              <select
+                id="calculation_method"
+                value={formData.calculation_method}
+                onChange={(e) => setFormData({ ...formData, calculation_method: e.target.value as 'indexing' | 'priority' })}
+                className="w-full px-3 py-2 border rounded-md"
+              >
+                <option value="indexing">Indexing (Dibagi berdasarkan Porsi Pool)</option>
+                <option value="priority">Priority (Dikurangkan langsung dari Pool)</option>
+              </select>
+              <p className="text-xs text-gray-500">
+                Priority digunakan untuk indikator yang memiliki nilai pasti (Rupiah) yang harus dibayarkan terlebih dahulu.
+              </p>
+            </div>
+
+
             {/* Weight Percentage */}
-            {!isMedicalUnit && (
+            {!isMedicalUnit && category?.is_weighted !== false && formData.calculation_method === 'indexing' && (
               <div className="space-y-2">
                 <Label htmlFor="weight_percentage">
                   {category?.configuration_style === 'activity' ? 'Poin Indeks (%) *' : 'Persentase Bobot (%) *'}
@@ -298,15 +448,15 @@ export default function IndicatorFormDialog({
                   )
                 })()}
                 <p className="text-xs text-gray-500">
-                  Total semua bobot indikator dalam kategori ini harus sama dengan 100%. Bobot individual bisa kurang dari 100%.
+                  Total semua bobot indikator indexing dalam kategori ini harus sama dengan 100%.
                 </p>
               </div>
             )}
 
-            {/* Basic Index Value (Only for Activity Style) */}
-            {category?.configuration_style === 'activity' && (
+            {/* Basic Index Value (Activity or Priority) */}
+            {(category?.configuration_style === 'activity' || formData.calculation_method === 'priority') && (
               <div className="space-y-2">
-                <Label htmlFor="basic_index_value">Tarif Dasar / Nilai Indeks *</Label>
+                <Label htmlFor="basic_index_value">Tarif Dasar / Nilai Rupiah *</Label>
                 <Input
                   id="basic_index_value"
                   type="number"
@@ -320,21 +470,160 @@ export default function IndicatorFormDialog({
                   <p className="text-sm text-red-600">{errors.basic_index_value}</p>
                 )}
                 <p className="text-xs text-gray-500">
-                  Nilai tarif pengali atau nilai indeks dasar (Activity-Based). Gunakan desimal hingga 4 angka (contoh: 0.1250).
+                  Nilai tarif pengali atau nilai rupiah langsung. Digunakan untuk metode Berbasis Aktivitas atau Priority.
                 </p>
               </div>
             )}
 
-            {/* Measurement Unit */}
-            <div className="space-y-2">
-              <Label htmlFor="measurement_unit">Satuan Pengukuran</Label>
-              <Input
-                id="measurement_unit"
-                value={formData.measurement_unit}
-                onChange={(e) => setFormData({ ...formData, measurement_unit: e.target.value })}
-                placeholder="contoh: pasien, jam, persentase"
-              />
-            </div>
+            {/* INTEGRATED SUB-INDICATOR FIELDS (Shown only if hasSubIndicators is false) */}
+            {!hasSubIndicators && (
+              <div className="space-y-6 pt-4 border-t-2 border-dashed">
+                <div className="space-y-2">
+                  <Label className="text-blue-700 font-bold uppercase text-[10px] tracking-wider">Konfigurasi Pengukuran</Label>
+                  <div className="space-y-2">
+                    <Label htmlFor="measurement_type">Tipe Kriteria *</Label>
+                    <select
+                      id="measurement_type"
+                      value={formData.measurement_type}
+                      onChange={(e) => setFormData({ ...formData, measurement_type: e.target.value as 'scoring' | 'quantitative' })}
+                      className="w-full px-3 py-2 border rounded-md"
+                    >
+                      <option value="scoring">Pemberian Skor (Level 1-5)</option>
+                      <option value="quantitative">Nilai Kuantitatif (Volume × Tarif)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {formData.measurement_type === 'quantitative' && (
+                  <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                    <div className="space-y-2">
+                      <Label htmlFor="base_index_value_sub">Tarif Dasar / Nilai Indeks *</Label>
+                      <Input
+                        id="base_index_value_sub"
+                        type="number"
+                        step="any"
+                        value={formData.base_index_value}
+                        onChange={(e) => setFormData({ ...formData, base_index_value: e.target.value })}
+                        placeholder="contoh: 150000 atau 0.8"
+                      />
+                      {errors.base_index_value_sub && (
+                        <p className="text-sm text-red-600">{errors.base_index_value_sub}</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="measurement_unit_sub">Satuan Pengukuran</Label>
+                      <Input
+                        id="measurement_unit_sub"
+                        value={formData.measurement_unit}
+                        onChange={(e) => setFormData({ ...formData, measurement_unit: e.target.value })}
+                        placeholder="contoh: Menit, Dokumen, Pasien"
+                      />
+                    </div>
+
+                    {isMedicalUnit && (
+                      <div className="space-y-3 pt-2">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-xs font-bold">Jenis Layanan *</Label>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-[10px]"
+                            onClick={() => {
+                              if (formData.service_types.length === SERVICE_TYPES.length) {
+                                setFormData({ ...formData, service_types: [] })
+                              } else {
+                                setFormData({ ...formData, service_types: [...SERVICE_TYPES] })
+                              }
+                            }}
+                          >
+                            {formData.service_types.length === SERVICE_TYPES.length ? 'Batal Semua' : 'Pilih Semua'}
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 bg-white p-2 rounded border max-h-[150px] overflow-y-auto">
+                          {SERVICE_TYPES.map((type) => (
+                            <div key={type} className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                id={`st-ind-${type}`}
+                                checked={formData.service_types.includes(type)}
+                                onChange={(e) => {
+                                  const checked = e.target.checked
+                                  const newTypes = checked
+                                    ? [...formData.service_types, type]
+                                    : formData.service_types.filter(t => t !== type)
+                                  setFormData({ ...formData, service_types: newTypes })
+                                }}
+                                className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                              />
+                              <label htmlFor={`st-ind-${type}`} className="text-[10px] text-gray-700 cursor-pointer">
+                                {type}
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                        {errors.service_types && (
+                          <p className="text-sm text-red-600">{errors.service_types}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {formData.measurement_type === 'scoring' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-bold uppercase">Kriteria Skor</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={addScoringCriterion}
+                        className="h-7 text-xs"
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Tambah
+                      </Button>
+                    </div>
+                    {errors.scoring_criteria && <p className="text-sm text-red-600">{errors.scoring_criteria}</p>}
+                    <div className="space-y-2">
+                      {formData.scoring_criteria.map((criterion, index) => (
+                        <div key={index} className="flex gap-2 items-start p-2 border rounded-lg bg-white">
+                          <div className="w-16">
+                            <Input
+                              type="number"
+                              value={criterion.score}
+                              onChange={(e) => updateScoringCriterion(index, 'score', e.target.value)}
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <Input
+                              value={criterion.label}
+                              onChange={(e) => updateScoringCriterion(index, 'label', e.target.value)}
+                              placeholder="Label kriteria"
+                              className="h-8 text-xs"
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeScoringCriterion(index)}
+                            disabled={formData.scoring_criteria.length <= 1}
+                            className="h-8 w-8 p-0 text-red-500"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
 
             {/* Description */}
             <div className="space-y-2">
