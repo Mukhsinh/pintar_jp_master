@@ -48,23 +48,28 @@ export const StatCard = memo(function StatCard({
   const Icon = iconMap[iconName]
   
   return (
-    <Card className={cn('hover:shadow-md transition-shadow', className)}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-gray-600">{title}</CardTitle>
-        <Icon className="h-5 w-5 text-blue-600" />
+    <Card className={cn('hover:shadow-lg hover:border-blue-200 transition-all duration-300 border border-gray-100 bg-gradient-to-br from-white to-gray-50', className)}>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+        <CardTitle className="text-sm font-bold text-gray-700 uppercase tracking-wide">{title}</CardTitle>
+        <div className="p-2.5 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg">
+          <Icon className="h-5 w-5 text-blue-600" />
+        </div>
       </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold text-gray-900">{value}</div>
+      <CardContent className="space-y-2">
+        <div className="text-3xl font-black text-gray-900">{value}</div>
         {description && (
-          <p className="text-xs text-gray-500 mt-1">{description}</p>
+          <p className="text-sm text-gray-500 font-medium">{description}</p>
         )}
-        {trend && (
+        {trend && trend.value !== 0 && (
           <div className={cn(
-            'text-xs mt-2 flex items-center',
-            trend.isPositive ? 'text-green-600' : 'text-red-600'
+            'text-xs font-bold mt-3 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg',
+            trend.isPositive 
+              ? 'bg-green-50 text-green-700' 
+              : 'bg-red-50 text-red-700'
           )}>
-            <span>{trend.isPositive ? '↑' : '↓'} {Math.abs(trend.value)}%</span>
-            <span className="text-gray-500 ml-1">dari bulan lalu</span>
+            <span className="text-lg">{trend.isPositive ? '↑' : '↓'}</span>
+            <span>{Math.abs(trend.value)}%</span>
+            <span className="text-gray-500 text-xs">bulan lalu</span>
           </div>
         )}
       </CardContent>

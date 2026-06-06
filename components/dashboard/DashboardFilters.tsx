@@ -45,22 +45,22 @@ export function DashboardFilters({
   }
 
   return (
-    <Card className="mb-6 overflow-visible">
-      <CardContent className="p-4 md:p-6">
+    <Card className="mb-6 overflow-visible border border-gray-100 bg-white shadow-sm hover:shadow-md transition-shadow">
+      <CardContent className="p-5 md:p-6">
         <div className="flex flex-col md:flex-row md:items-center gap-4">
-          <div className="flex items-center gap-2 text-gray-500">
-            <Filter className="h-4 w-4" />
-            <span className="text-sm font-semibold uppercase tracking-wider">Filter</span>
+          <div className="flex items-center gap-2 text-gray-600">
+            <Filter className="h-5 w-5" />
+            <span className="text-sm font-bold uppercase tracking-wider">Filter</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex items-center gap-3 md:gap-4 flex-1">
             {showPeriodFilter && (
-              <div className="flex items-center gap-2 w-full">
-                <Calendar className="h-4 w-4 text-gray-400 hidden sm:block" />
+              <div className="flex items-center gap-3 w-full">
+                <Calendar className="h-5 w-5 text-gray-400 hidden sm:block" />
                 <select
                   value={searchParams.get('period') || 'month'}
                   onChange={(e) => handleFilterChange('period', e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                  className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-gray-300"
                 >
                   <optgroup label="Bulan">
                     <option value="M-01">Januari</option>
@@ -98,7 +98,7 @@ export function DashboardFilters({
               <select
                 value={currentYearVal}
                 onChange={(e) => handleFilterChange('year', e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-gray-300"
               >
                 {Array.from({ length: 5 }, (_, i) => currentYear - i).map(year => (
                   <option key={year} value={year}>{year}</option>
@@ -107,11 +107,11 @@ export function DashboardFilters({
             </div>
 
             {showUnitFilter && (
-              <div className="w-full lg:min-w-[200px]">
+              <div className="w-full lg:min-w-[220px]">
                 <select
                   value={currentUnit}
                   onChange={(e) => handleFilterChange('unit_id', e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                  className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-gray-300"
                 >
                   <option value="all">Semua Unit</option>
                   {units.map(unit => (
@@ -123,7 +123,7 @@ export function DashboardFilters({
 
             {showExport && (
               <div className="sm:col-span-2 lg:ml-auto">
-                <Button variant="outline" size="sm" className="w-full sm:w-auto font-semibold text-blue-600 border-blue-100 hover:bg-blue-50">
+                <Button variant="outline" size="sm" className="w-full sm:w-auto font-bold text-blue-600 border-blue-200 bg-blue-50 hover:bg-blue-100 hover:border-blue-300 transition-all h-10 px-5">
                   <Download className="h-4 w-4 mr-2" />
                   Eksport
                 </Button>

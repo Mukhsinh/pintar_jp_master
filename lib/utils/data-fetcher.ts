@@ -4,13 +4,15 @@
  */
 
 import { createClient } from '@/lib/supabase/server'
-import type { Database } from '@/lib/types/database.types'
-
-type Tables = Database['public']['Tables']
 
 export interface BatchQueryOptions {
   timeout?: number
   retries?: number
+}
+
+export interface QueryResult<T> {
+  data: T | null
+  error: any
 }
 
 export class DataFetcher {
@@ -31,20 +33,20 @@ export class DataFetcher {
     unitId: string | null,
     period: string,
     options: BatchQueryOptions = {}
-  ) {
+  ): Promise<QueryResult<any[]>> {
     const { timeout = 10000, retries = 2 } = options
 
     const supabase = await this.getSupabase()
-    const query = supabase
+    
+    let query = supabase
       .from('m_employees')
       .select(`
         id,
         employee_code,
         full_name,
         unit_id,
-        role,
         is_active,
-        t_kpi_assessments!left (
+        t_kpi_assessments(
           id,
           realization_value,
           target_value,
@@ -54,43 +56,43 @@ export class DataFetcher {
           indicator_id,
           sub_indicator_id,
           period,
-          m_kpi_indicators!inner (
+          m_kpi_indicators(
             id,
             code,
             name,
             category_id,
             basic_index_value,
-            m_kpi_categories!inner (
+            m_kpi_categories(
               category,
               unit_id,
               configuration_style
             )
           ),
-          m_kpi_sub_indicators!left (
+          m_kpi_sub_indicators(
             measurement_type,
             unit_tariff,
             base_index_value
           )
         ),
-        t_realization!left (
+        t_realization(
           id,
           realization_value,
           indicator_id,
           sub_indicator_id,
           period,
-          m_kpi_indicators!inner (
+          m_kpi_indicators(
             id,
             target_value,
             weight_percentage,
             category_id,
             basic_index_value,
-            m_kpi_categories!inner (
+            m_kpi_categories(
               category,
               unit_id,
               configuration_style
             )
           ),
-          m_kpi_sub_indicators!left (
+          m_kpi_sub_indicators(
             measurement_type,
             unit_tariff,
             base_index_value
@@ -98,14 +100,29 @@ export class DataFetcher {
         )
       `)
       .eq('is_active', true)
-      .eq('t_kpi_assessments.period', period)
-      .eq('t_realization.period', period)
 
     if (unitId) {
-      query.eq('unit_id', unitId)
+      query = query.eq('unit_id', unitId)
     }
 
-    return this.executeWithRetry(query, retries, timeout)
+    const { data, error } = await this.executeWithRetry(query, retries, timeout)
+    
+    if (error) {
+      return { data: null, error }
+    }
+    
+    // Filter results by period after fetching (since we can't filter on nested left joins effectively)
+    if (!data || !Array.isArray(data)) {
+      return { data: [], error: null }
+    }
+
+    const filtered = data.map((emp: any) => ({
+      ...emp,
+      t_kpi_assessments: emp.t_kpi_assessments?.filter((a: any) => a.period === period) || [],
+      t_realization: emp.t_realization?.filter((r: any) => r.period === period) || []
+    }))
+
+    return { data: filtered, error: null }
   }
 
   /**
@@ -134,10 +151,10 @@ export class DataFetcher {
 
       // Unread notifications count
       supabase
-        .from('t_notifications')
+        .from('t_notification')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', userId)
-        .eq('is_read', false)
+        .eq('read', false)
     ]
 
     const results = await Promise.allSettled(queries)
@@ -153,7 +170,7 @@ export class DataFetcher {
    * Get user employee data with caching
    * Eliminates repeated user data fetching patterns
    */
-  async getUserEmployee(userId: string) {
+  async getUserEmployee(userId: string): Promise<QueryResult<any>> {
     const supabase = await this.getSupabase()
     const { data, error } = await supabase
       .from('m_employees')
@@ -175,15 +192,17 @@ export class DataFetcher {
       .eq('is_active', true)
       .single()
 
-    if (error) throw error
-    return data
+    if (error) {
+      return { data: null, error }
+    }
+    return { data, error: null }
   }
 
   private async executeWithRetry<T>(
     query: any,
     retries: number,
     timeout: number
-  ): Promise<T> {
+  ): Promise<{ data: T | null; error: any }> {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const timeoutPromise = new Promise((_, reject) =>
@@ -196,10 +215,10 @@ export class DataFetcher {
           throw result.error
         }
 
-        return result.data
+        return { data: result.data, error: null }
       } catch (error) {
         if (attempt === retries) {
-          throw error
+          return { data: null, error }
         }
 
         // Wait before retry (exponential backoff)
@@ -207,7 +226,7 @@ export class DataFetcher {
       }
     }
 
-    throw new Error('Max retries exceeded')
+    return { data: null, error: new Error('Max retries exceeded') }
   }
 }
 

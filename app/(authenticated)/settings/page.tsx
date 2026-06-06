@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Upload, Save, Image as ImageIcon, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { saveSettings } from './actions'
 
 interface Settings {
   app_name: string
@@ -235,144 +236,44 @@ export default function SettingsPage() {
         }
       }
 
-      const supabase = createClient()
+      const result = await saveSettings({
+        company_info: {
+          appName: settings.app_name,
+          developerName: settings.developer_name,
+          name: settings.organization_name,
+          address: settings.organization_address,
+          phone: settings.organization_phone,
+          email: settings.organization_email,
+          logo: logoUrl || '',
+        },
+        footer: { text: settings.footer_text },
+        tax_rates: {
+          TK0: settings.tax_rates['TK/0'],
+          TK1: settings.tax_rates['TK/1'],
+          TK2: settings.tax_rates['TK/2'],
+          TK3: settings.tax_rates['TK/3'],
+          K0: settings.tax_rates['K/0'],
+          K1: settings.tax_rates['K/1'],
+          K2: settings.tax_rates['K/2'],
+          K3: settings.tax_rates['K/3'],
+        },
+        ter_rates: settings.ter_rates,
+        calculation_params: settings.calculation_params,
+        session_timeout: settings.session_timeout,
+        tax_config: settings.tax_config,
+      })
 
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser()
-
-      // Prepare company_info object
-      const companyInfo = {
-        appName: settings.app_name,
-        developerName: settings.developer_name,
-        name: settings.organization_name,
-        address: settings.organization_address,
-        phone: settings.organization_phone,
-        email: settings.organization_email,
-        logo: logoUrl || ''
-      }
-
-      // Upsert company_info
-      const { error: companyError } = await supabase
-        .from('t_settings')
-        .upsert({
-          key: 'company_info',
-          value: companyInfo,
-          updated_by: user?.id,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'key' })
-
-      if (companyError) {
-        console.error('Company info error:', companyError)
-        throw companyError
-      }
-
-      // Upsert footer
-      const footerData = {
-        text: settings.footer_text
-      }
-
-      const { error: footerError } = await supabase
-        .from('t_settings')
-        .upsert({
-          key: 'footer',
-          value: footerData,
-          updated_by: user?.id,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'key' })
-
-      if (footerError) {
-        console.error('Footer error:', footerError)
-        throw footerError
-      }
-
-      // Upsert tax rates (PPh 21 based on PTKP status)
-      const taxRatesData = {
-        'TK/0': settings.tax_rates['TK/0'],
-        'TK/1': settings.tax_rates['TK/1'],
-        'TK/2': settings.tax_rates['TK/2'],
-        'TK/3': settings.tax_rates['TK/3'],
-        'K/0': settings.tax_rates['K/0'],
-        'K/1': settings.tax_rates['K/1'],
-        'K/2': settings.tax_rates['K/2'],
-        'K/3': settings.tax_rates['K/3']
-      }
-
-      const { error: taxRatesError } = await supabase
-        .from('t_settings')
-        .upsert({
-          key: 'tax_rates',
-          value: taxRatesData,
-          updated_by: user?.id,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'key' })
-
-      if (taxRatesError) {
-        console.error('Tax rates error:', taxRatesError)
-        throw taxRatesError
-      }
-
-      // Upsert TER rates
-      const { error: terRatesError } = await supabase
-        .from('t_settings')
-        .upsert({
-          key: 'ter_rates',
-          value: settings.ter_rates,
-          updated_by: user?.id,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'key' })
-
-      if (terRatesError) {
-        console.error('TER rates error:', terRatesError)
-        throw terRatesError
-      }
-
-      // Upsert calculation params
-      const { error: calcError } = await supabase
-        .from('t_settings')
-        .upsert({
-          key: 'calculation_params',
-          value: settings.calculation_params,
-          updated_by: user?.id,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'key' })
-
-      if (calcError) {
-        console.error('Calculation params error:', calcError)
-        throw calcError
-      }
-
-      // Upsert session timeout
-      const { error: sessionError } = await supabase
-        .from('t_settings')
-        .upsert({
-          key: 'session_timeout',
-          value: settings.session_timeout,
-          updated_by: user?.id,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'key' })
-
-      if (sessionError) {
-        console.error('Session timeout error:', sessionError)
-        throw sessionError
-      }
-
-      // Upsert tax config (Global Mechanism)
-      const { error: taxConfigError } = await supabase
-        .from('t_settings')
-        .upsert({
-          key: 'tax_config',
-          value: settings.tax_config,
-          updated_by: user?.id,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'key' })
-
-      if (taxConfigError) {
-        console.error('Tax config error:', taxConfigError)
-        throw taxConfigError
+      if (!result.success) {
+        throw new Error(result.error || 'Gagal menyimpan')
       }
 
       toast.success('Pengaturan berhasil disimpan')
       setLogoFile(null)
+
+      // Clear sidebar cache and trigger refresh
+      try { localStorage.removeItem('sidebar-company-info') } catch { }
+      window.dispatchEvent(new Event('sidebar-refresh'))
+
       await loadSettings()
     } catch (error: any) {
       console.error('Error saving settings:', error)

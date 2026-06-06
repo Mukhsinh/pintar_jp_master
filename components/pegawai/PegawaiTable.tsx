@@ -89,12 +89,12 @@ export const PegawaiTable = memo(function PegawaiTable({ pegawai, loading, onEdi
               <td className="p-3 text-xs md:text-sm font-medium text-gray-900">{p.employee_code}</td>
               <td className="p-3 text-xs md:text-sm text-gray-700">
                 <div className="font-medium">{p.full_name}</div>
-                <div className="text-[10px] text-gray-400 md:hidden">{p.position || '-'}</div>
+                <div className="text-xs text-gray-400 md:hidden">{p.position || '-'}</div>
               </td>
               <td className="p-3 text-xs md:text-sm text-gray-600 hidden md:table-cell">{p.m_units?.name || '-'}</td>
               <td className="p-3 text-xs md:text-sm text-gray-600 hidden lg:table-cell">{p.position || '-'}</td>
               <td className="p-3 hidden sm:table-cell">
-                <span className={`px-2 py-0.5 text-[10px] md:text-xs rounded-full font-medium ${p.employment_status === 'PNS' ? 'bg-purple-100 text-purple-800' :
+                <span className={`px-2 py-0.5 text-xs md:text-xs rounded-full font-medium ${p.employment_status === 'PNS' ? 'bg-purple-100 text-purple-800' :
                   p.employment_status === 'PPPK' ? 'bg-green-100 text-green-800' :
                     'bg-orange-100 text-orange-800'
                   }`}>
@@ -112,12 +112,12 @@ export const PegawaiTable = memo(function PegawaiTable({ pegawai, loading, onEdi
               <td className="p-3 text-xs md:text-sm text-gray-600 hidden lg:table-cell">{p.phone || '-'}</td>
               <td className="p-3">
                 {p.is_active ? (
-                  <span className="flex items-center text-green-600 text-[10px] md:text-xs">
+                  <span className="flex items-center text-green-600 text-xs md:text-xs">
                     <CheckCircle className="h-3 w-3 md:h-4 md:w-4 mr-1" />
                     <span className="hidden xs:inline">Aktif</span>
                   </span>
                 ) : (
-                  <span className="flex items-center text-red-600 text-[10px] md:text-xs">
+                  <span className="flex items-center text-red-600 text-xs md:text-xs">
                     <Ban className="h-3 w-3 md:h-4 md:w-4 mr-1" />
                     <span className="hidden xs:inline">Nonaktif</span>
                   </span>

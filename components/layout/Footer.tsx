@@ -29,7 +29,7 @@ export function Footer() {
   }, [])
 
   return (
-    <footer className="bg-white border-t border-gray-200 py-4 px-4 md:px-6 text-center text-[10px] md:text-sm text-gray-600">
+    <footer className="bg-white border-t border-gray-200 py-4 px-4 md:px-6 text-center text-xs md:text-sm text-gray-600">
       {footerText}
     </footer>
   )

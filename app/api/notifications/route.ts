@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
     if (unreadOnly) {
       try {
-        const { count, error } = await getUnreadCount(user.id, supabase)
+        const { count, error } = await getUnreadCount(employee.id, supabase)
         return NextResponse.json({ count: error ? 0 : count })
       } catch (error: any) {
         return NextResponse.json({ count: 0 })
@@ -55,11 +55,22 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Get employee record for correct user_id mapping
+    const { data: employee } = await supabase
+      .from('m_employees')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (!employee) {
+      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+    }
+
     const body = await request.json()
     const { notificationId, markAll } = body
 
     if (markAll) {
-      const { success, error } = await markAllAsRead(user.id, supabase)
+      const { success, error } = await markAllAsRead(employee.id, supabase)
 
       if (!success) {
         return NextResponse.json({ error }, { status: 500 })

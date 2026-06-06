@@ -172,9 +172,9 @@ export const TariffTable = memo(function TariffTable({ tariffs }: TariffTablePro
                         ) : (
                             tariffs.map((tariff) => (
                                 <TableRow key={tariff.id} className="hover:bg-gray-50/50 transition-colors">
-                                    <TableCell className="font-mono text-[10px] font-bold text-gray-500">{tariff.code}</TableCell>
+                                    <TableCell className="font-mono text-xs font-bold text-gray-500">{tariff.code}</TableCell>
                                     <TableCell className="hidden lg:table-cell">
-                                        <span className="text-[10px] font-semibold px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
+                                        <span className="text-xs font-semibold px-2 py-0.5 bg-gray-100 text-gray-600 rounded">
                                             {tariff.service_type || '-'}
                                         </span>
                                     </TableCell>

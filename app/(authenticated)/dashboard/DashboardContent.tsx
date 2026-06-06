@@ -119,13 +119,14 @@ export async function DashboardContent({
     }
 
     return (
-      <div className="container mx-auto p-4 md:p-6 space-y-6">
-        <div className="space-y-1">
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm md:text-base text-gray-600">
-            Selamat datang, {employee.full_name} - {unitName}
-          </p>
-        </div>
+      <div className="w-full bg-gradient-to-br from-gray-50 via-white to-gray-50 min-h-screen">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8 space-y-6">
+          <div className="space-y-2">
+            <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tight">Dashboard</h1>
+            <p className="text-base md:text-lg text-gray-600 font-medium">
+              Selamat datang, <span className="text-blue-600 font-bold">{employee.full_name}</span> • {unitName}
+            </p>
+          </div>
 
         {employee.role === 'superadmin' && (
           <>
@@ -136,7 +137,7 @@ export async function DashboardContent({
               units={units}
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
               <StatCard
                 title="Total Pegawai"
                 value={stats.totalEmployees}
@@ -198,7 +199,7 @@ export async function DashboardContent({
               showExport={true}
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
               <StatCard
                 title="Pegawai Unit"
                 value={stats.totalEmployees}
@@ -247,7 +248,7 @@ export async function DashboardContent({
 
         {employee.role === 'employee' && (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
               <StatCard
                 title="Skor KPI Anda"
                 value="0"
@@ -270,6 +271,7 @@ export async function DashboardContent({
             <QuickActions role="employee" />
           </>
         )}
+        </div>
       </div>
     )
   } catch (error) {

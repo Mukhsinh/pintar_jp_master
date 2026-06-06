@@ -40,7 +40,7 @@ export function TopPerformers({ performers }: TopPerformersProps) {
             <p className="text-sm text-gray-500 text-center py-4">Belum ada data performa</p>
           ) : (
             performers.map((performer) => (
-              <div key={performer.id} className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors">
+              <div key={performer.id} className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:shadow-sm transition-colors">
                 <div className="flex items-center space-x-3">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${getRankColor(performer.rank)}`}>
                     {performer.rank}

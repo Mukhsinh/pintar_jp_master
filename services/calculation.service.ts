@@ -46,19 +46,20 @@ interface CalculationPrerequisites {
 export async function calculateIndividualScores(period: string) {
   const supabase = await createClient()
 
-  // Get all active employees
-  const { data: employees, error: empError } = await supabase
-    .from('m_employees')
-    .select('id, unit_id, tax_status')
-    .eq('is_active', true)
-
-  if (empError) throw empError
-
   const results = []
 
   // Use batch query to eliminate N+1 problem
   const { dataFetcher } = await import('@/lib/utils/data-fetcher')
-  const employeesWithKPIData = await dataFetcher.getEmployeesWithKPIData(null, period) as any[]
+  let employeesWithKPIData: any[] = []
+  
+  try {
+    const { data, error } = await dataFetcher.getEmployeesWithKPIData(null, period)
+    if (error) throw error
+    employeesWithKPIData = data || []
+  } catch (err) {
+    console.error('Error fetching employees with KPI data:', err)
+    throw new Error(`Failed to fetch employee KPI data: ${err instanceof Error ? err.message : 'Unknown error'}`)
+  }
 
   for (const employee of employeesWithKPIData) {
     // Process assessment data (preferred) or fallback to realization data
