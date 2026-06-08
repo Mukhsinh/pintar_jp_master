@@ -278,7 +278,7 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
       m_kpi_indicators!inner (
         name,
         weight_percentage,
-        basic_index_value,
+        base_index_value,
         target_value,
         calculation_method,
         m_kpi_categories!inner (
@@ -329,7 +329,7 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
 
       for (const a of catAssessments) {
         const indRealization = parseFloat(a.realization_value) || 0
-        const basicVal = parseFloat(a.m_kpi_indicators?.basic_index_value) || 0
+        const basicVal = parseFloat(a.m_kpi_indicators?.base_index_value) || 0
         const indicatorScore = parseFloat(a.score) || 0
         const indName = a.m_kpi_indicators?.name || '-'
         const indWeight = parseFloat(a.weight_percentage) || 0
@@ -641,7 +641,7 @@ async function generateKPIAchievementReport(supabase: any, period: string, unitI
         name,
         target_value,
         weight_percentage,
-        basic_index_value,
+        base_index_value,
         calculation_method,
         m_kpi_categories (
           category,
@@ -696,7 +696,7 @@ async function generateKPIAchievementReport(supabase: any, period: string, unitI
     const unitData = Array.isArray(empRecord?.m_units) ? empRecord?.m_units[0] : empRecord?.m_units
     const unitName = unitData?.name || '-'
 
-    const basicVal = parseFloat(row.m_kpi_indicators.basic_index_value) || 0
+    const basicVal = parseFloat(row.m_kpi_indicators.base_index_value) || 0
     const catStyle = row.m_kpi_indicators.m_kpi_categories?.configuration_style
     const calcMethod = row.m_kpi_indicators.calculation_method || 'indexing'
     const isWeightedCat = row.m_kpi_indicators.m_kpi_categories?.is_weighted !== false

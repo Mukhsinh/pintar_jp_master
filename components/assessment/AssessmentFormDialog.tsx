@@ -52,7 +52,7 @@ interface KPIIndicator {
   target_value: number
   weight_percentage: number
   calculation_method: 'indexing' | 'priority'
-  basic_index_value: number
+  base_index_value: number
   measurement_unit?: string
   description?: string
   sub_indicators: KPISubIndicator[]
@@ -201,7 +201,7 @@ export default function AssessmentFormDialog({
       const isUnweightedCat = category?.is_weighted === false
 
       if (isPriority) {
-        const tariff = parseFloat(indicator.basic_index_value?.toString() || '0')
+        const tariff = parseFloat(indicator.base_index_value?.toString() || '0')
         score = inputRealization * tariff
         derivedRealizationValue = inputRealization
         achievementPercentage = 100
@@ -335,8 +335,6 @@ export default function AssessmentFormDialog({
               realization_value: assessment.realization_value,
               target_value: getIndicatorTarget(indicator),
               weight_percentage: indicator.weight_percentage,
-              achievement_percentage: assessment.achievement_percentage,
-              score: assessment.score,
               notes: assessment.notes,
               sub_assessments: assessment.sub_assessments
             })

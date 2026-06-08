@@ -123,9 +123,38 @@ export function DashboardFilters({
 
             {showExport && (
               <div className="sm:col-span-2 lg:ml-auto">
-                <Button variant="outline" size="sm" className="w-full sm:w-auto font-bold text-blue-600 border-blue-200 bg-blue-50 hover:bg-blue-100 hover:border-blue-300 transition-all h-10 px-5">
+                <Button
+                  onClick={async () => {
+                    try {
+                      const period = searchParams.get('period') || 'month'
+                      const year = searchParams.get('year') || new Date().getFullYear().toString()
+                      const unitId = searchParams.get('unit_id')
+
+                      const response = await fetch('/api/dashboard/export', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ period, year, unitId })
+                      })
+
+                      if (!response.ok) throw new Error('Gagal mengunduh laporan')
+
+                      const blob = await response.blob()
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `Dashboard_Report_${period}_${year}.pdf`
+                      document.body.appendChild(a)
+                      a.click()
+                      a.remove()
+                    } catch (err) {
+                      console.error('Export error:', err)
+                      alert('Gagal mengunduh laporan dashboard')
+                    }
+                  }}
+                  className="w-full sm:w-auto font-bold bg-red-600 hover:bg-red-700 text-white transition-all h-10 px-5 shadow-sm"
+                >
                   <Download className="h-4 w-4 mr-2" />
-                  Eksport
+                  Unduh
                 </Button>
               </div>
             )}

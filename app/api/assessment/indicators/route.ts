@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
     // Get indicators for the categories
     const { data: indicators, error: indicatorsError } = await adminClient
       .from('m_kpi_indicators')
-      .select('id, code, name, target_value, weight_percentage, category_id, measurement_unit, description, calculation_method, basic_index_value')
+      .select('id, code, name, target_value, weight_percentage, category_id, measurement_unit, description, calculation_method, base_index_value, measurement_type, unit_tariff, service_types')
       .eq('is_active', true)
       .in('category_id', categoryIds)
 
@@ -145,25 +145,12 @@ export async function GET(request: NextRequest) {
       }
       subIndicators = subInds || []
 
-      // Fetch all unique service types across all sub-indicators to minimize queries
-      const allServiceTypes = Array.from(new Set(subIndicators.flatMap(s => s.service_types || [])))
-
-      let masterTariffs: any[] = []
-      if (allServiceTypes.length > 0) {
-        const { data: tariffs } = await adminClient
-          .from('m_master_tariffs')
-          .select('*')
-          .eq('is_active', true)
-          .in('service_type', allServiceTypes)
-
-        masterTariffs = tariffs || []
-      }
-
-      // Add relevant master tariffs to each sub-indicator
-      subIndicators = subIndicators.map(sub => ({
+      // Note: m_master_tariffs query removed as it was causing 500 errors.
+      // Sub-indicators now handle their own data mapping without requiring a separate master tariff join here.
+      subIndicators = subInds?.map(sub => ({
         ...sub,
-        tariffs: masterTariffs.filter(t => sub.service_types?.includes(t.service_type))
-      }))
+        tariffs: [] // Placeholder for now or removed if not needed in the list view
+      })) || []
     }
 
     console.log('[indicators] sub-indicators count:', subIndicators.length)
@@ -225,7 +212,10 @@ export async function GET(request: NextRequest) {
         target_value: indicator.target_value,
         weight_percentage: indicator.weight_percentage,
         calculation_method: indicator.calculation_method || 'indexing',
-        basic_index_value: indicator.basic_index_value || 0,
+        base_index_value: indicator.base_index_value || 0,
+        measurement_type: indicator.measurement_type || 'scoring',
+        unit_tariff: indicator.unit_tariff || 0,
+        service_types: indicator.service_types || [],
         category_id: indicator.category_id,
         category_name: category?.category_name || 'Tanpa Kategori',
         category_type: category?.category || 'Unknown',

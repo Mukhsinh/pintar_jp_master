@@ -1,9 +1,17 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { DashboardFilters } from '@/components/dashboard/DashboardFilters'
-import { PerformanceChart } from '@/components/dashboard/PerformanceChart'
-import { KPIDistributionChart } from '@/components/dashboard/KPIDistributionChart'
+
+// Lazy load heavy chart components
+const PerformanceChart = dynamic(() => import('@/components/dashboard/PerformanceChart').then(mod => mod.PerformanceChart), {
+  loading: () => <div className="h-[350px] w-full bg-gray-100 animate-pulse rounded-xl" />
+})
+const KPIDistributionChart = dynamic(() => import('@/components/dashboard/KPIDistributionChart').then(mod => mod.KPIDistributionChart), {
+  loading: () => <div className="h-[350px] w-full bg-gray-100 animate-pulse rounded-xl" />
+})
+
 import { TopPerformers } from '@/components/dashboard/TopPerformers'
 import { UnitPerformanceTable } from '@/components/dashboard/UnitPerformanceTable'
 import { WorstPerformers } from '@/components/dashboard/WorstPerformers'
@@ -128,149 +136,149 @@ export async function DashboardContent({
             </p>
           </div>
 
-        {employee.role === 'superadmin' && (
-          <>
-            <DashboardFilters
-              showUnitFilter={true}
-              showPeriodFilter={true}
-              showExport={true}
-              units={units}
-            />
+          {employee.role === 'superadmin' && (
+            <>
+              <DashboardFilters
+                showUnitFilter={true}
+                showPeriodFilter={true}
+                showExport={true}
+                units={units}
+              />
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-              <StatCard
-                title="Total Pegawai"
-                value={stats.totalEmployees}
-                description="Pegawai aktif"
-                iconName="Users"
-                trend={{ value: stats.trends.employees, isPositive: true }}
-              />
-              <StatCard
-                title="Total Unit"
-                value={stats.totalUnits}
-                description="Unit organisasi"
-                iconName="Building2"
-              />
-              <StatCard
-                title="Rata-rata Skor"
-                value={stats.avgScore.toFixed(2)}
-                description="Skor KPI keseluruhan"
-                iconName="TrendingUp"
-                trend={{ value: stats.trends.score, isPositive: true }}
-              />
-              <StatCard
-                title="Tingkat Penyelesaian"
-                value={`${stats.completionRate.toFixed(1)}%`}
-                description="Penilaian selesai"
-                iconName="CheckCircle"
-                trend={{ value: stats.trends.completion, isPositive: true }}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <PerformanceChart
-                data={performanceTrend}
-                type="bar"
-                title="Tren Performa KPI"
-                description="Performa 6 bulan terakhir"
-              />
-              <KPIDistributionChart data={kpiDistribution} />
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2">
-                <UnitPerformanceTable units={unitPerformance} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                <StatCard
+                  title="Total Pegawai"
+                  value={stats.totalEmployees}
+                  description="Pegawai aktif"
+                  iconName="Users"
+                  trend={{ value: stats.trends.employees, isPositive: true }}
+                />
+                <StatCard
+                  title="Total Unit"
+                  value={stats.totalUnits}
+                  description="Unit organisasi"
+                  iconName="Building2"
+                />
+                <StatCard
+                  title="Rata-rata Skor"
+                  value={stats.avgScore.toFixed(2)}
+                  description="Skor KPI keseluruhan"
+                  iconName="TrendingUp"
+                  trend={{ value: stats.trends.score, isPositive: true }}
+                />
+                <StatCard
+                  title="Tingkat Penyelesaian"
+                  value={`${stats.completionRate.toFixed(1)}%`}
+                  description="Penilaian selesai"
+                  iconName="CheckCircle"
+                  trend={{ value: stats.trends.completion, isPositive: true }}
+                />
               </div>
-              <div className="space-y-6">
-                <TopPerformers performers={topPerformers} />
-                <WorstPerformers performers={worstPerformers} />
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <PerformanceChart
+                  data={performanceTrend}
+                  type="bar"
+                  title="Tren Performa KPI"
+                  description="Performa 6 bulan terakhir"
+                />
+                <KPIDistributionChart data={kpiDistribution} />
               </div>
-            </div>
 
-            <QuickActions role="superadmin" />
-          </>
-        )}
-
-        {employee.role === 'unit_manager' && (
-          <>
-            <DashboardFilters
-              showUnitFilter={false}
-              showPeriodFilter={true}
-              showExport={true}
-            />
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-              <StatCard
-                title="Pegawai Unit"
-                value={stats.totalEmployees}
-                description="Total pegawai di unit Anda"
-                iconName="Users"
-                trend={{ value: stats.trends.employees, isPositive: true }}
-              />
-              <StatCard
-                title="Tingkat Penyelesaian"
-                value={`${stats.completionRate.toFixed(1)}%`}
-                description="Penilaian selesai"
-                iconName="CheckCircle"
-                trend={{ value: stats.trends.completion, isPositive: true }}
-              />
-              <StatCard
-                title="Skor Rata-rata Unit"
-                value={stats.avgScore.toFixed(2)}
-                description="Performa unit Anda"
-                iconName="Award"
-                trend={{ value: stats.trends.score, isPositive: true }}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <PerformanceChart
-                data={performanceTrend}
-                type="bar"
-                title="Tren Performa Unit"
-                description="Performa 6 bulan terakhir"
-              />
-              <KPIDistributionChart data={kpiDistribution} />
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-1">
-                <TopPerformers performers={topPerformers} />
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2">
+                  <UnitPerformanceTable units={unitPerformance} />
+                </div>
+                <div className="space-y-6">
+                  <TopPerformers performers={topPerformers} />
+                  <WorstPerformers performers={worstPerformers} />
+                </div>
               </div>
-              <div className="lg:col-span-1">
-                <WorstPerformers performers={worstPerformers} />
+
+              <QuickActions role="superadmin" />
+            </>
+          )}
+
+          {employee.role === 'unit_manager' && (
+            <>
+              <DashboardFilters
+                showUnitFilter={false}
+                showPeriodFilter={true}
+                showExport={true}
+              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+                <StatCard
+                  title="Pegawai Unit"
+                  value={stats.totalEmployees}
+                  description="Total pegawai di unit Anda"
+                  iconName="Users"
+                  trend={{ value: stats.trends.employees, isPositive: true }}
+                />
+                <StatCard
+                  title="Tingkat Penyelesaian"
+                  value={`${stats.completionRate.toFixed(1)}%`}
+                  description="Penilaian selesai"
+                  iconName="CheckCircle"
+                  trend={{ value: stats.trends.completion, isPositive: true }}
+                />
+                <StatCard
+                  title="Skor Rata-rata Unit"
+                  value={stats.avgScore.toFixed(2)}
+                  description="Performa unit Anda"
+                  iconName="Award"
+                  trend={{ value: stats.trends.score, isPositive: true }}
+                />
               </div>
-            </div>
 
-            <QuickActions role="unit_manager" />
-          </>
-        )}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <PerformanceChart
+                  data={performanceTrend}
+                  type="bar"
+                  title="Tren Performa Unit"
+                  description="Performa 6 bulan terakhir"
+                />
+                <KPIDistributionChart data={kpiDistribution} />
+              </div>
 
-        {employee.role === 'employee' && (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-              <StatCard
-                title="Skor KPI Anda"
-                value="0"
-                description="Skor terakhir"
-                iconName="Award"
-              />
-              <StatCard
-                title="Ranking"
-                value="-"
-                description="Posisi di unit"
-                iconName="TrendingUp"
-              />
-              <StatCard
-                title="Status"
-                value="Aktif"
-                description="Status kepegawaian"
-                iconName="Activity"
-              />
-            </div>
-            <QuickActions role="employee" />
-          </>
-        )}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-1">
+                  <TopPerformers performers={topPerformers} />
+                </div>
+                <div className="lg:col-span-1">
+                  <WorstPerformers performers={worstPerformers} />
+                </div>
+              </div>
+
+              <QuickActions role="unit_manager" />
+            </>
+          )}
+
+          {employee.role === 'employee' && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+                <StatCard
+                  title="Skor KPI Anda"
+                  value="0"
+                  description="Skor terakhir"
+                  iconName="Award"
+                />
+                <StatCard
+                  title="Ranking"
+                  value="-"
+                  description="Posisi di unit"
+                  iconName="TrendingUp"
+                />
+                <StatCard
+                  title="Status"
+                  value="Aktif"
+                  description="Status kepegawaian"
+                  iconName="Activity"
+                />
+              </div>
+              <QuickActions role="employee" />
+            </>
+          )}
         </div>
       </div>
     )

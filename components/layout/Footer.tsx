@@ -3,7 +3,11 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-export function Footer() {
+interface FooterProps {
+  className?: string
+}
+
+export function Footer({ className }: FooterProps) {
   const [footerText, setFooterText] = useState('© 2026 JASPEL Enterprise - All Rights Reserved')
 
   useEffect(() => {
@@ -16,11 +20,19 @@ export function Footer() {
           .eq('key', 'footer')
           .maybeSingle()
 
-        if (!error && data?.value?.text) {
-          setFooterText(data.value.text)
+        if (error) {
+          console.error('Error fetching footer:', error)
+          return
+        }
+
+        if (data?.value) {
+          if (typeof data.value === 'string') {
+            setFooterText(data.value)
+          } else if (data.value && typeof data.value === 'object' && 'text' in data.value) {
+            setFooterText((data.value as any).text)
+          }
         }
       } catch (error) {
-        // Use default footer on error
         console.error('Failed to load footer:', error)
       }
     }
@@ -29,7 +41,7 @@ export function Footer() {
   }, [])
 
   return (
-    <footer className="bg-white border-t border-gray-200 py-4 px-4 md:px-6 text-center text-xs md:text-sm text-gray-600">
+    <footer className={className || "bg-white border-t border-gray-200 py-4 px-4 md:px-6 text-center text-xs md:text-sm text-gray-600"}>
       {footerText}
     </footer>
   )

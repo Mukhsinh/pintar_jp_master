@@ -305,11 +305,17 @@ export async function generateIncentiveSlipPDF(data: IncentiveSlipData | Incenti
       columnStyles: { 0: { cellWidth: 10 }, 1: { cellWidth: 120 }, 2: { cellWidth: 50, halign: 'right' } }
     })
 
-    // Footer
+  }
+
+  // Add footer to every page
+  const pageCount = (doc as any).internal.getNumberOfPages()
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i)
     const pageHeight = doc.internal.pageSize.height
     doc.setFontSize(8)
     doc.setFont('helvetica', 'italic')
     doc.text(footerText, 105, pageHeight - 10, { align: 'center' })
+    doc.text(`Halaman ${i} dari ${pageCount}`, doc.internal.pageSize.width - 25, pageHeight - 10)
   }
 
   return new Uint8Array(doc.output('arraybuffer'))
@@ -508,12 +514,18 @@ export async function generateSummaryReportPDF(
     })
   }
 
-  // Footer for landscape
-  const pageHeight = doc.internal.pageSize.height
+  // Add footer to every page
+  const pageCount = (doc as any).internal.getNumberOfPages()
   const footerText = footerSetting?.data?.text || 'Laporan dihasilkan secara otomatis oleh JASPEL System'
-  doc.setFontSize(8)
-  doc.setFont('helvetica', 'italic')
-  doc.text(footerText, centerX, pageHeight - 10, { align: 'center' })
+
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i)
+    const pageHeight = doc.internal.pageSize.height
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'italic')
+    doc.text(footerText, centerX, pageHeight - 10, { align: 'center' })
+    doc.text(`Halaman ${i} dari ${pageCount}`, doc.internal.pageSize.width - 25, pageHeight - 10)
+  }
 
   return new Uint8Array(doc.output('arraybuffer'))
 }
@@ -588,6 +600,8 @@ export async function exportToPDF(options: ReportExportOptions): Promise<Uint8Ar
       }
     })
     return await generateIncentiveSlipPDF(slips)
+  } else if (options.reportType === 'dashboard-summary') {
+    return await generateDashboardReportPDF(options.data, options.period)
   } else {
     return await generateSummaryReportPDF(options.data, options.period, options.reportType)
   }
@@ -797,6 +811,196 @@ export async function generateAssessmentGuidePDF(unitName: string = 'Seluruh Uni
     doc.setFont('helvetica', 'italic')
     doc.text(footerText, centerX, doc.internal.pageSize.height - 15, { align: 'center' })
     doc.text(`Halaman ${i} dari ${pageCount}`, doc.internal.pageSize.width - 25, doc.internal.pageSize.height - 15)
+  }
+
+  return new Uint8Array(doc.output('arraybuffer'))
+}
+
+/**
+ * Generate Dashboard Summary Report PDF
+ */
+export async function generateDashboardReportPDF(data: any, period: string): Promise<Uint8Array> {
+  const doc = new jsPDF()
+  const companyInfo = await getCompanyInfoServer()
+  const footerSetting = await getSettingServer('footer')
+  const footerText = footerSetting?.data?.text || 'Laporan dihasilkan secara otomatis oleh JASPEL System'
+
+  const centerX = doc.internal.pageSize.width / 2
+
+  // Add header to first page
+  await addKopSurat(doc, companyInfo)
+
+  doc.setFontSize(14)
+  doc.setFont('helvetica', 'bold')
+  doc.text('LAPORAN RINGKASAN PERFORMANCE DASHBOARD', centerX, 42, { align: 'center' })
+
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`Periode: ${period}`, centerX, 48, { align: 'center' })
+
+  // 1. STATS SUMMARY
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.text('A. RINGKASAN STATISTIK', 15, 60)
+
+  const stats = data.stats
+  autoTable(doc, {
+    startY: 65,
+    head: [['Indikator Utama', 'Nilai', 'Keterangan']],
+    body: [
+      ['Total Pegawai', stats.totalEmployees, 'Pegawai aktif terdaftar'],
+      ['Total Unit', stats.totalUnits, 'Unit organisasi aktif'],
+      ['Rata-rata Skor KPI', stats.avgScore.toFixed(2), 'Skor rata-rata seluruh unit/pegawai'],
+      ['Tingkat Penyelesaian', `${stats.completionRate.toFixed(1)}%`, 'Persentase penilaian yang sudah selesai']
+    ],
+    theme: 'grid',
+    headStyles: { fillColor: [44, 62, 80], textColor: 255 },
+    styles: { fontSize: 9, cellPadding: 3 }
+  })
+
+  // 2. UNIT PERFORMANCE (if available)
+  if (data.unitPerformance && data.unitPerformance.length > 0) {
+    let currentY = (doc as any).lastAutoTable.finalY + 10
+    if (currentY > 250) { doc.addPage(); currentY = 20 }
+
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.text('B. PERFORMA UNIT KERJA', 15, currentY)
+
+    autoTable(doc, {
+      startY: currentY + 5,
+      head: [['No', 'Unit', 'Pegawai', 'Rata-rata Skor', 'Status']],
+      body: data.unitPerformance.map((u: any, i: number) => [
+        i + 1,
+        u.name,
+        u.employeeCount,
+        u.avgScore.toFixed(2),
+        u.status.toUpperCase()
+      ]),
+      theme: 'striped',
+      headStyles: { fillColor: [52, 73, 94], textColor: 255 },
+      styles: { fontSize: 8, cellPadding: 2 },
+      columnStyles: {
+        0: { cellWidth: 10 },
+        2: { halign: 'center' },
+        3: { halign: 'right' },
+        4: { halign: 'center' }
+      }
+    })
+  }
+
+  // 3. TOP PERFORMERS
+  let currentY = (doc as any).lastAutoTable.finalY + 12
+  if (currentY > 230) { doc.addPage(); await addKopSurat(doc, companyInfo); currentY = 45 }
+
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.text('C. PEGAWAI DENGAN PERFORMA TERTINGGI', 15, currentY)
+
+  autoTable(doc, {
+    startY: currentY + 5,
+    head: [['Rank', 'Nama Pegawai', 'Unit Kerja', 'Skor Akhir']],
+    body: (data.topPerformers || []).map((p: any) => [
+      p.rank,
+      p.name,
+      p.unit,
+      p.score.toFixed(2)
+    ]),
+    theme: 'striped',
+    headStyles: { fillColor: [34, 197, 94], textColor: 255 },
+    styles: { fontSize: 8.5, cellPadding: 2 },
+    columnStyles: {
+      0: { cellWidth: 15, halign: 'center' },
+      3: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }
+    }
+  })
+
+  // 4. WORST PERFORMERS
+  currentY = (doc as any).lastAutoTable.finalY + 12
+  if (currentY > 230) { doc.addPage(); await addKopSurat(doc, companyInfo); currentY = 45 }
+
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.text('D. PEGAWAI DENGAN PERFORMA TERENDAH / PERLU PERHATIAN', 15, currentY)
+
+  autoTable(doc, {
+    startY: currentY + 5,
+    head: [['Rank', 'Nama Pegawai', 'Unit Kerja', 'Skor Akhir']],
+    body: (data.worstPerformers || []).map((p: any) => [
+      p.rank,
+      p.name,
+      p.unit,
+      p.score.toFixed(2)
+    ]),
+    theme: 'striped',
+    headStyles: { fillColor: [239, 68, 68], textColor: 255 },
+    styles: { fontSize: 8.5, cellPadding: 2 },
+    columnStyles: {
+      0: { cellWidth: 15, halign: 'center' },
+      3: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }
+    }
+  })
+
+  // 5. KPI DISTRIBUTION
+  currentY = (doc as any).lastAutoTable.finalY + 12
+  if (currentY > 230) { doc.addPage(); await addKopSurat(doc, companyInfo); currentY = 45 }
+
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.text('E. DISTRIBUSI RATA-RATA SKOR PER KATEGORI KPI', 15, currentY)
+
+  autoTable(doc, {
+    startY: currentY + 5,
+    head: [['Kategori / Indikator', 'Rata-rata Skor']],
+    body: (data.kpiDistribution || []).map((d: any) => [
+      d.name,
+      d.value.toFixed(2)
+    ]),
+    theme: 'grid',
+    headStyles: { fillColor: [44, 62, 80], textColor: 255 },
+    styles: { fontSize: 8.5, cellPadding: 3 },
+    columnStyles: {
+      2: { halign: 'right', fontStyle: 'bold' }
+    }
+  })
+
+  // 6. PERFORMANCE TREND
+  currentY = (doc as any).lastAutoTable.finalY + 12
+  if (currentY > 230) { doc.addPage(); await addKopSurat(doc, companyInfo); currentY = 45 }
+
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.text('F. TREN PERFORMA KPI (6 BULAN TERAKHIR)', 15, currentY)
+
+  autoTable(doc, {
+    startY: currentY + 5,
+    head: [['Bulan', 'Rata-rata P1', 'Rata-rata P2', 'Rata-rata P3', 'Total Skor']],
+    body: (data.performanceTrend || []).map((t: any) => [
+      t.month,
+      t.p1.toFixed(2),
+      t.p2.toFixed(2),
+      t.p3.toFixed(2),
+      t.total.toFixed(2)
+    ]),
+    theme: 'grid',
+    headStyles: { fillColor: [44, 62, 80], textColor: 255 },
+    styles: { fontSize: 8.5, cellPadding: 3 },
+    columnStyles: {
+      1: { halign: 'right' },
+      2: { halign: 'right' },
+      3: { halign: 'right' },
+      4: { halign: 'right', fontStyle: 'bold' }
+    }
+  })
+
+  // Add page numbers and footer to all pages
+  const totalPages = (doc as any).internal.getNumberOfPages()
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i)
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'italic')
+    doc.text(footerText, centerX, doc.internal.pageSize.height - 10, { align: 'center' })
+    doc.text(`Halaman ${i} dari ${totalPages}`, doc.internal.pageSize.width - 30, doc.internal.pageSize.height - 10)
   }
 
   return new Uint8Array(doc.output('arraybuffer'))

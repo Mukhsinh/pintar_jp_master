@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, RefreshCw, MessageCircle, Eye, EyeOff, Mail, Lock } from 'lucide-react'
 import Image from 'next/image'
+import { Footer } from '@/components/layout/Footer'
 
 function getErrorMessage(code: string | null): string | null {
   if (!code) return null
@@ -21,12 +22,12 @@ function getErrorMessage(code: string | null): string | null {
 }
 
 export default function LoginPage() {
-  const [email, setEmail]               = useState('')
-  const [password, setPassword]         = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [isLoading, setIsLoading]       = useState(false)
-  const [error, setError]               = useState<string | null>(null)
-  const [showClear, setShowClear]       = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [showClear, setShowClear] = useState(false)
   const searchParams = useSearchParams()
 
   useEffect(() => {
@@ -39,9 +40,9 @@ export default function LoginPage() {
     try {
       localStorage.clear()
       sessionStorage.clear()
-      ;['sb-access-token', 'sb-refresh-token', 'supabase-auth-token'].forEach(n => {
-        document.cookie = `${n}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
-      })
+        ;['sb-access-token', 'sb-refresh-token', 'supabase-auth-token'].forEach(n => {
+          document.cookie = `${n}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+        })
     } catch { /* ignore */ }
   }
 
@@ -68,7 +69,7 @@ export default function LoginPage() {
         email: email.trim().toLowerCase(),
         password,
       })
-      if (authErr)    { setError(authErr.message || 'Email atau kata sandi salah'); setShowClear(true); setIsLoading(false); return }
+      if (authErr) { setError(authErr.message || 'Email atau kata sandi salah'); setShowClear(true); setIsLoading(false); return }
       if (!auth.user) { setError('Gagal membuat sesi, silakan coba lagi'); setIsLoading(false); return }
       try { await fetch('/api/users/sync-role', { method: 'POST' }) } catch { /* ignore */ }
       window.location.href = '/dashboard'
@@ -193,9 +194,7 @@ export default function LoginPage() {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-[11px] text-slate-600 font-medium mt-6 leading-relaxed">
-          APLIKASI PINTAR-JP &copy;2026. Mukhsin Hadi. All Right Reserved
-        </p>
+        <Footer className="text-center text-[11px] text-slate-600 font-medium mt-6 leading-relaxed bg-transparent border-0" />
       </div>
     </div>
   )

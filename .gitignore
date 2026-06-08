@@ -1,5 +1,3 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
 # dependencies
 /node_modules
 /.pnp
@@ -12,6 +10,7 @@
 # next.js
 /.next/
 /out/
+next-env.d.ts
 
 # production
 /build
@@ -19,78 +18,80 @@
 # misc
 .DS_Store
 *.pem
-
-# debug
+*.log
+*.log*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
 # local env files
-.env*.local
 .env
+.env*.local
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
 
-# project specific
-/node_modules
-/.next/
+# project specific files that should not be in git
+/ARCHIVE_SCRIPTS/
 /.kiro/
 /tmp/
 /test-output/
-
-# logs & debug output
-*.log
-*.log*
-*_log.txt
-cols.log
-schema_check.log
-dev_log.txt
+/scripts/temp/
 *.txt
-output.json
-response.json
-reports_output.json
+*.json
+!package.json
+!tsconfig.json
+!next.config.js
+!postcss.config.js
+!tailwind.config.js
+!components.json
 
-# Debug / test scripts (one-off scripts created during debugging)
+# user generated content/configs
+mcp_config.json
+.gemini/
+
+# large data files
+*.xls
+*.xlsx
+*.pdf
+materi KPI/
+
+# OS metadata
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# temp scripts
 check_*.js
 check_*.ts
 debug-*.js
 debug-*.ts
-find_*.js
-inspect_*.js
-compare_*.js
-test-db*.js
-test-db*.ts
 test_*.js
-test_filter*.js
-get_report.js
-find_scores.js
-read_excel.py
-*.py
-
-# PowerShell fix/test scripts (not needed in repo)
+test-*.ts
+temp_*.js
+temp_*.ts
 FIX_*.ps1
 TEST_*.ps1
-PERBAIKAN_*.md
-PERBAIKI_*.ps1
 VERIFIKASI_*.ps1
-MULAI_*.ps1
-RESTART_*.ps1
-START_*.ps1
 DEPLOY_*.ps1
-PUSH_*.ps1
 SETUP_*.ps1
-OPTIMASI_*.ps1
+*.ps1
+!scripts/*.ts
+!scripts/*.js
+
+# Documentation artifacts and summaries
+*_SUMMARY.md
+PERBAIKAN_*.md
 REBUILD_*.md
-QUICK_*.ps1
-QUICK_*.sql
 CARA_*.md
 PANDUAN_*.md
-INSTALL.md
 DASHBOARD_FEATURES.md
 FOOTER_IMPLEMENTATION.md
 IMPLEMENTASI_PENILAIAN_KPI.md
@@ -99,27 +100,4 @@ SUB_INDICATORS_IMPLEMENTATION_SUMMARY.md
 REFACTORING_SUMMARY.md
 VERCEL_DEPLOY_FIX_SUMMARY.md
 SOLUSI_ERROR_WEBPACK.md
-DEPLOY_GITHUB_VERCEL.ps1
-DEPLOY_TO_VERCEL.ps1
-DEPLOY_VERCEL_READY.ps1
-DEPLOY_VERCEL_SUCCESS.ps1
-GITHUB_AUTH_PUSH.ps1
-QUICK_PUSH.ps1
-
-# migration logs
-migration-log-*.json
-
-# backup/alternate next configs
-next.config.backup.js
-next.config.clean.js
-next.config.simple.js
-
-# large data files
-*.xls
-*.xlsx
-materi KPI/
-
-# configuration and sensitive
-.env*.local
-mcp_config.json
-.gemini/
+INSTALL.md

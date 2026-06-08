@@ -103,8 +103,6 @@ async function upsertAssessment(adminClient: any, assessment: Assessment): Promi
     realization_value: assessment.realization_value,
     target_value: assessment.target_value,
     weight_percentage: assessment.weight_percentage,
-    achievement_percentage: achievement,
-    score: score,
     notes: assessment.notes,
     assessor_id: assessment.assessor_id
   }
@@ -157,8 +155,6 @@ async function upsertAssessment(adminClient: any, assessment: Assessment): Promi
         realization_value: sub.realization_value || 0,
         target_value: 0, // Not used for sub-indicators usually
         weight_percentage: 0,
-        achievement_percentage: 100, // Placeholder
-        score: sub.score || 0,
         notes: sub.notes || '',
         assessor_id: assessment.assessor_id
       }
