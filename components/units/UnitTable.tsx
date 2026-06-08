@@ -10,10 +10,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
-import { Edit, Trash2, Power, PowerOff, Plus, Download, Upload, FileSpreadsheet, FileText } from 'lucide-react'
+import { Edit, Trash2, Power, PowerOff, Plus, Download, Upload, FileSpreadsheet, FileText, Loader2 } from 'lucide-react'
+import { Progress } from '@/components/ui/progress'
 import { UnitFormDialog } from './UnitFormDialog'
 import { DeleteUnitDialog } from './DeleteUnitDialog'
 import { createClient } from '@/lib/supabase/client'
+import { toast } from 'sonner'
+import { useRouter } from 'next/navigation'
 
 interface Unit {
   id: string
@@ -26,12 +29,16 @@ interface Unit {
 
 interface UnitTableProps {
   units: Unit[]
+  onSuccess?: () => void
 }
 
-export const UnitTable = memo(function UnitTable({ units }: UnitTableProps) {
+export const UnitTable = memo(function UnitTable({ units, onSuccess }: UnitTableProps) {
+  const router = useRouter()
   const [selectedUnit, setSelectedUnit] = useState<Unit | null>(null)
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [isDeleteOpen, setIsDeleteOpen] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+  const [importProgress, setImportProgress] = useState(0)
 
   const handleAdd = () => {
     setSelectedUnit(null)
@@ -49,6 +56,7 @@ export const UnitTable = memo(function UnitTable({ units }: UnitTableProps) {
   }
 
   const handleToggleActive = async (unit: Unit) => {
+    const toastId = toast.loading(`${unit.is_active ? 'Menonaktifkan' : 'Mengaktifkan'} unit...`)
     try {
       const supabase = createClient()
 
@@ -62,10 +70,12 @@ export const UnitTable = memo(function UnitTable({ units }: UnitTableProps) {
 
       if (error) throw error
 
-      // Refresh the page to show updated data
-      window.location.reload()
-    } catch (err) {
+      toast.success(`Unit ${unit.is_active ? 'dinonaktifkan' : 'diaktifkan'}`, { id: toastId })
+      if (onSuccess) onSuccess()
+      router.refresh()
+    } catch (err: any) {
       console.error('Error toggling unit status:', err)
+      toast.error(err.message || 'Gagal mengubah status unit', { id: toastId })
     }
   }
 
@@ -84,27 +94,71 @@ export const UnitTable = memo(function UnitTable({ units }: UnitTableProps) {
     const formData = new FormData()
     formData.append('file', file)
 
+    setIsImporting(true)
+    setImportProgress(10)
+    const toastId = toast.loading('Menyiapkan data import...')
+
+    // Simulate progress more smoothly
+    let currentProgress = 10
+    const progressInterval = setInterval(() => {
+      currentProgress += (90 - currentProgress) * 0.1
+      setImportProgress(Math.round(currentProgress))
+    }, 400)
+
     try {
+      setImportProgress(20)
+      toast.loading('Mengunggah file dan memvalidasi...', { id: toastId })
+
       const response = await fetch('/api/units/import', {
         method: 'POST',
         body: formData,
       })
 
       const result = await response.json()
+      clearInterval(progressInterval)
+      setImportProgress(100)
 
-      if (response.ok) {
-        alert(`Import berhasil!\nBerhasil: ${result.success}\nGagal: ${result.failed}${result.errors.length > 0 ? '\n\nError:\n' + result.errors.join('\n') : ''}`)
-        window.location.reload()
-      } else {
-        alert(`Import gagal: ${result.error}`)
+      if (!response.ok) {
+        throw new Error(result.error || 'Gagal mengimport data')
       }
-    } catch (error) {
-      console.error('Import error:', error)
-      alert('Terjadi kesalahan saat import')
-    }
 
-    // Reset input
-    event.target.value = ''
+      if (result.success > 0 || result.failed === 0) {
+        toast.success(
+          `Import berhasil!`,
+          {
+            id: toastId,
+            duration: 5000,
+            description: `${result.success} unit berhasil diproses.${result.failed > 0 ? ` (${result.failed} gagal)` : ''}. Data pegawai otomatis disinkronkan.`,
+          }
+        )
+
+        // Final refresh of the data
+        if (onSuccess) onSuccess()
+        router.refresh()
+      } else {
+        toast.error(`Import gagal. Semua data (${result.failed} unit) gagal diproses.`, { id: toastId })
+      }
+
+      if (result.errors && result.errors.length > 0) {
+        console.error('Import detail errors:', result.errors)
+      }
+
+      // Hide progress bar after success
+      setTimeout(() => {
+        setIsImporting(false)
+        setImportProgress(0)
+      }, 2000)
+
+    } catch (error: any) {
+      clearInterval(progressInterval)
+      console.error('Import error:', error)
+      toast.error(error.message || 'Terjadi kesalahan saat import', { id: toastId })
+      setIsImporting(false)
+      setImportProgress(0)
+    } finally {
+      // Reset input
+      event.target.value = ''
+    }
   }
 
   const handleDownloadReport = (format: 'excel' | 'pdf') => {
@@ -118,6 +172,7 @@ export const UnitTable = memo(function UnitTable({ units }: UnitTableProps) {
           <Button
             onClick={handleDownloadTemplate}
             className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9"
+            disabled={isImporting}
           >
             <Download className="mr-1.5 h-3.5 w-3.5" />
             Template
@@ -126,9 +181,14 @@ export const UnitTable = memo(function UnitTable({ units }: UnitTableProps) {
           <Button
             onClick={() => document.getElementById('import-units')?.click()}
             className="flex-1 sm:flex-none bg-amber-600 hover:bg-amber-700 text-white text-xs h-9"
+            disabled={isImporting}
           >
-            <Upload className="mr-1.5 h-3.5 w-3.5" />
-            Import
+            {isImporting ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Upload className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            {isImporting ? 'Importing...' : 'Import'}
           </Button>
 
           <div className="flex gap-2 w-full sm:w-auto">
@@ -137,6 +197,7 @@ export const UnitTable = memo(function UnitTable({ units }: UnitTableProps) {
               variant="outline"
               size="sm"
               className="flex-1 sm:flex-none h-9"
+              disabled={isImporting}
             >
               <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5 text-green-600" />
               Excel
@@ -147,6 +208,7 @@ export const UnitTable = memo(function UnitTable({ units }: UnitTableProps) {
               variant="outline"
               size="sm"
               className="flex-1 sm:flex-none h-9"
+              disabled={isImporting}
             >
               <FileText className="mr-1.5 h-3.5 w-3.5 text-red-600" />
               PDF
@@ -157,11 +219,29 @@ export const UnitTable = memo(function UnitTable({ units }: UnitTableProps) {
         <Button
           onClick={handleAdd}
           className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+          disabled={isImporting}
         >
           <Plus className="mr-2 h-4 w-4" />
           Tambah Unit
         </Button>
       </div>
+
+      {isImporting && (
+        <div className="mb-6 p-5 border-2 rounded-xl bg-blue-50/30 border-blue-100 shadow-sm animate-in fade-in zoom-in-95 duration-500">
+          <div className="flex justify-between items-center mb-3">
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-blue-600 animate-pulse" />
+              <span className="text-sm font-semibold text-blue-900 tracking-tight">Memproses Import Data Unit...</span>
+            </div>
+            <span className="text-sm font-bold text-blue-700 bg-blue-100/50 px-2 py-0.5 rounded text-mono">{importProgress}%</span>
+          </div>
+          <Progress value={importProgress} className="h-2.5 bg-blue-100" />
+          <div className="flex justify-between mt-2.5">
+            <p className="text-[11px] text-blue-600/80 italic font-medium">Mohon tunggu, jangan tutup atau refresh halaman...</p>
+            <p className="text-[11px] text-blue-600/80 font-semibold uppercase tracking-wider">{importProgress === 100 ? 'Selesai' : 'Sedang Bekerja'}</p>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-md border">
         <Table>
@@ -249,6 +329,14 @@ export const UnitTable = memo(function UnitTable({ units }: UnitTableProps) {
         unit={selectedUnit}
         open={isDeleteOpen}
         onOpenChange={setIsDeleteOpen}
+      />
+
+      <input
+        type="file"
+        id="import-units"
+        className="hidden"
+        accept=".xlsx, .xls"
+        onChange={handleImport}
       />
     </>
   )

@@ -5,13 +5,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getPegawaiWithUnits } from './actions'
-import { Plus, Search, RefreshCw } from 'lucide-react'
+import { Plus, Search, RefreshCw, Upload, Download, FileSpreadsheet, FileText, Loader2 } from 'lucide-react'
 import { PegawaiTable } from '@/components/pegawai/PegawaiTable'
 import { PegawaiFormDialog } from '@/components/pegawai/PegawaiFormDialog'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { validateSessionData } from '@/lib/utils/auth-session'
 import type { Pegawai } from '@/lib/types/database.types'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
+import { Progress } from '@/components/ui/progress'
 
 // Force dynamic rendering to avoid build-time errors
 export const dynamic = 'force-dynamic'
@@ -43,6 +45,9 @@ export default function PegawaiPage() {
   const [totalCount, setTotalCount] = useState(0)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [selectedPegawai, setSelectedPegawai] = useState<Pegawai | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [importProgress, setImportProgress] = useState(0)
+  const [importStatus, setImportStatus] = useState('')
 
   const pageSize = 50
   const totalPages = Math.ceil(totalCount / pageSize)
@@ -50,9 +55,8 @@ export default function PegawaiPage() {
   // Debounce search term to reduce API calls
   const debouncedSearchTerm = useDebounce(searchTerm, 500)
 
-  // Validate session on mount (auth handler is already set up in root layout)
+  // Validate session on mount
   useEffect(() => {
-    // Validate session data on component mount
     if (!validateSessionData()) {
       setError('Session data corrupted, please login again')
       router.push('/login')
@@ -69,7 +73,6 @@ export default function PegawaiPage() {
       const result = await getPegawaiWithUnits(currentPage, pageSize, debouncedSearchTerm)
 
       if (result.error) {
-        // Handle authentication errors
         if (result.error.includes('terautentikasi') || result.error.includes('akses')) {
           console.error('Auth error, redirecting to login')
           router.push('/login')
@@ -106,7 +109,7 @@ export default function PegawaiPage() {
 
   const handleSearch = useCallback((value: string) => {
     setSearchTerm(value)
-    setCurrentPage(1) // Reset to first page on search
+    setCurrentPage(1)
   }, [])
 
   const handleEdit = useCallback((pegawai: Pegawai) => {
@@ -132,8 +135,27 @@ export default function PegawaiPage() {
     const file = event.target.files?.[0]
     if (!file) return
 
+    setImporting(true)
+    setImportProgress(5)
+    setImportStatus('Mengunggah file...')
+
     const formData = new FormData()
     formData.append('file', file)
+
+    // Smooth progress simulation
+    let currentProg = 5
+    const progressInterval = setInterval(() => {
+      currentProg += (85 - currentProg) * 0.08
+      setImportProgress(Math.round(currentProg))
+
+      if (currentProg > 20 && currentProg < 50) {
+        setImportStatus('Memvalidasi dan memproses data...')
+      } else if (currentProg >= 50 && currentProg < 80) {
+        setImportStatus('Menyinkronkan ke database...')
+      } else if (currentProg >= 80) {
+        setImportStatus('Menyelesaikan proses...')
+      }
+    }, 400)
 
     try {
       const response = await fetch('/api/pegawai/import', {
@@ -141,20 +163,58 @@ export default function PegawaiPage() {
         body: formData,
       })
 
+      clearInterval(progressInterval)
+      setImportProgress(100)
+      setImportStatus('Selesai!')
+
       const result = await response.json()
+      console.log('[IMPORT RESULT]', result)
 
       if (response.ok) {
-        alert(`Import berhasil!\nBerhasil: ${result.success}\nGagal: ${result.failed}${result.errors.length > 0 ? '\n\nError:\n' + result.errors.slice(0, 5).join('\n') + (result.errors.length > 5 ? '\n... dan lainnya' : '') : ''}`)
-        loadPegawai()
-      } else {
-        alert(`Import gagal: ${result.error}`)
-      }
-    } catch (error) {
-      console.error('Import error:', error)
-      alert('Terjadi kesalahan saat import')
-    }
+        const totalProcessed = (result.success || 0) + (result.failed || 0)
 
-    event.target.value = ''
+        if (result.success > 0) {
+          // Build detailed toast description
+          toast.success(`Import Selesai — ${result.success} dari ${totalProcessed} berhasil`, {
+            duration: 12000,
+            description: result.failed > 0
+              ? `⚠️ ${result.failed} gagal: ${(result.errors || []).slice(0, 5).join(' | ')}${(result.errors || []).length > 5 ? ` (+${result.errors.length - 5} lainnya)` : ''}`
+              : 'Semua data berhasil diproses!',
+          })
+          // Reload data
+          loadPegawai()
+        } else if (result.failed > 0) {
+          toast.error(`Import Gagal — Semua ${result.failed} data gagal diproses`, {
+            duration: 15000,
+            description: `Penyebab: ${(result.errors || []).slice(0, 3).join(' | ')}`,
+          })
+        } else {
+          toast.warning('Tidak ada data yang diproses', {
+            description: 'File mungkin kosong atau header tidak sesuai template.',
+            duration: 8000,
+          })
+        }
+      } else {
+        toast.error('Import Gagal', {
+          description: result.error || 'Terjadi kesalahan pada server.',
+          duration: 10000,
+        })
+      }
+    } catch (err: any) {
+      clearInterval(progressInterval)
+      console.error('Import error:', err)
+      toast.error('Koneksi Gagal', {
+        description: 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda.',
+        duration: 10000,
+      })
+    } finally {
+      setTimeout(() => {
+        setImporting(false)
+        setImportProgress(0)
+        setImportStatus('')
+      }, 1500)
+      if (event?.target) event.target.value = ''
+    }
   }
 
   const handleDownloadReport = (format: 'excel' | 'pdf') => {
@@ -171,6 +231,25 @@ export default function PegawaiPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
+      {/* Import Progress Bar */}
+      {importing && (
+        <div className="fixed top-0 left-0 right-0 z-[100]">
+          <div className="h-1.5 w-full bg-blue-100">
+            <div
+              className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-500 ease-out"
+              style={{ width: `${importProgress}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between px-4 py-1.5 bg-blue-600 text-white text-xs shadow-lg">
+            <div className="flex items-center gap-2">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span className="font-medium">{importStatus}</span>
+            </div>
+            <span className="font-bold tabular-nums">{importProgress}%</span>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">Master Pegawai</h1>
@@ -180,17 +259,23 @@ export default function PegawaiPage() {
           <Button
             onClick={handleDownloadTemplate}
             className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs md:text-sm px-2 md:px-4"
+            disabled={importing}
           >
-            <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+            <Download className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
             Template
           </Button>
 
           <Button
             onClick={() => document.getElementById('import-pegawai')?.click()}
             className="bg-amber-600 hover:bg-amber-700 text-white text-xs md:text-sm px-2 md:px-4"
+            disabled={importing}
           >
-            <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
-            Import
+            {importing ? (
+              <Loader2 className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2 animate-spin" />
+            ) : (
+              <Upload className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+            )}
+            {importing ? 'Importing...' : 'Import'}
           </Button>
           <input
             id="import-pegawai"
@@ -203,28 +288,52 @@ export default function PegawaiPage() {
           <Button
             onClick={() => handleDownloadReport('excel')}
             className="bg-blue-600 hover:bg-blue-700 text-white text-xs md:text-sm px-2 md:px-4"
+            disabled={importing}
           >
-            <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+            <FileSpreadsheet className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
             Excel
           </Button>
 
           <Button
             onClick={() => handleDownloadReport('pdf')}
             className="bg-rose-600 hover:bg-rose-700 text-white text-xs md:text-sm px-2 md:px-4"
+            disabled={importing}
           >
-            <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
+            <FileText className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
             PDF
           </Button>
 
           <Button
             onClick={() => setShowCreateDialog(true)}
             className="col-span-2 md:col-span-1 text-xs md:text-sm"
+            disabled={importing}
           >
             <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" />
             Tambah Pegawai
           </Button>
         </div>
       </div>
+
+      {/* Import Detail Card */}
+      {importing && (
+        <Card className="border-blue-200 bg-blue-50/50 animate-in fade-in duration-500">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-blue-900">Proses Import Sedang Berjalan</p>
+                <p className="text-xs text-blue-700">{importStatus} — Jangan tutup atau refresh halaman ini.</p>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-blue-600 tabular-nums">{importProgress}%</p>
+              </div>
+            </div>
+            <Progress value={importProgress} className="mt-3 h-2 bg-blue-100" />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
