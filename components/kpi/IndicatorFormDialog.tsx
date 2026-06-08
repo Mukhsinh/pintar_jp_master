@@ -207,6 +207,17 @@ export default function IndicatorFormDialog({
     setFormData({ ...formData, scoring_criteria: newCriteria })
   }
 
+  function moveScoringCriterion(index: number, direction: 'up' | 'down') {
+    const newCriteria = [...formData.scoring_criteria]
+    const targetIndex = direction === 'up' ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= newCriteria.length) return
+
+    const temp = newCriteria[index]
+    newCriteria[index] = newCriteria[targetIndex]
+    newCriteria[targetIndex] = temp
+    setFormData({ ...formData, scoring_criteria: newCriteria })
+  }
+
   function validateForm(): boolean {
     const newErrors: Record<string, string> = {}
 
@@ -344,297 +355,301 @@ export default function IndicatorFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
+      <DialogContent className="sm:max-w-[600px] flex flex-col max-h-[90vh] p-0 overflow-hidden">
+        <form onSubmit={handleSubmit} className="flex flex-col min-h-0 h-full">
+          <DialogHeader className="p-6 pb-2 border-b flex-shrink-0">
             <DialogTitle>{indicator ? 'Ubah Indikator' : 'Tambah Indikator'}</DialogTitle>
             <DialogDescription>
               {indicator ? 'Perbarui informasi indikator' : `Buat indikator baru untuk ${category?.category} - ${category?.category_name}`}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
-            <div className="space-y-2">
-              <Label htmlFor="code">Kode Indikator *</Label>
-              <Input
-                id="code"
-                value={formData.code}
-                onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-                placeholder="contoh: IND-001"
-                disabled={!!indicator}
-              />
-              {errors.code && (
-                <p className="text-sm text-red-600">{errors.code}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="ind_name">Nama Indikator *</Label>
-              <Input
-                id="ind_name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="contoh: Kedisiplinan Kerja"
-              />
-              {errors.name && (
-                <p className="text-sm text-red-600">{errors.name}</p>
-              )}
-            </div>
-
-            <div className="space-y-2 p-3 bg-gray-50 rounded-lg border">
-              <Label className="text-sm font-semibold">Terdapat Sub Indikator?</Label>
-              <select
-                value={hasSubIndicators ? 'true' : 'false'}
-                onChange={(e) => setHasSubIndicators(e.target.value === 'true')}
-                className="w-full mt-2 px-3 py-2 border rounded-md"
-                disabled={!!indicator && hasSubIndicators}
-              >
-                <option value="false">Tidak Ada (Satu Nilai)</option>
-                <option value="true">Ada Sub Indikator</option>
-              </select>
-              <p className="text-[10px] text-gray-500 italic mt-1">
-                {hasSubIndicators
-                  ? 'Anda perlu menambahkan sub-indikator secara manual setelah membuat indikator ini.'
-                  : 'Sistem akan otomatis membuat sub-indikator tunggal dengan konfigurasi di bawah ini.'}
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="calculation_method">Metode Kalkulasi *</Label>
-              <select
-                id="calculation_method"
-                value={formData.calculation_method}
-                onChange={(e) => setFormData({ ...formData, calculation_method: e.target.value as 'indexing' | 'priority' })}
-                className="w-full px-3 py-2 border rounded-md"
-              >
-                <option value="indexing">Indexing (Dibagi berdasarkan Porsi Pool)</option>
-                <option value="priority">Priority (Dikurangkan langsung dari Pool)</option>
-              </select>
-              <p className="text-xs text-gray-500">
-                Priority digunakan untuk indikator yang memiliki nilai pasti (Rupiah) yang harus dibayarkan terlebih dahulu.
-              </p>
-            </div>
-
-
-            {/* Weight Percentage */}
-            {!isMedicalUnit && category?.is_weighted !== false && formData.calculation_method === 'indexing' && (
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="weight_percentage">
-                  {category?.configuration_style === 'activity' ? 'Poin Indeks (%) *' : 'Persentase Bobot (%) *'}
-                </Label>
+                <Label htmlFor="code">Kode Indikator *</Label>
                 <Input
-                  id="weight_percentage"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  max="100"
-                  value={formData.weight_percentage}
-                  onChange={(e) => setFormData({ ...formData, weight_percentage: e.target.value })}
-                  placeholder="contoh: 25.00"
+                  id="code"
+                  value={formData.code}
+                  onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                  placeholder="contoh: IND-001"
+                  disabled={!!indicator}
                 />
-                {errors.weight_percentage && (
-                  <p className="text-sm text-red-600">{errors.weight_percentage}</p>
+                {errors.code && (
+                  <p className="text-sm text-red-600">{errors.code}</p>
                 )}
-                {formData.weight_percentage && !errors.weight_percentage && (() => {
-                  const weightInfo = getTotalWeightInfo()
-                  return (
-                    <p className={`text-xs font-medium ${weightInfo.isValid ? 'text-green-600' : 'text-amber-600'}`}>
-                      {weightInfo.message}
-                    </p>
-                  )
-                })()}
-                <p className="text-xs text-gray-500">
-                  Total semua bobot indikator indexing dalam kategori ini harus sama dengan 100%.
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="ind_name">Nama Indikator *</Label>
+                <Input
+                  id="ind_name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="contoh: Kedisiplinan Kerja"
+                />
+                {errors.name && (
+                  <p className="text-sm text-red-600">{errors.name}</p>
+                )}
+              </div>
+
+              <div className="space-y-2 p-3 bg-gray-50 rounded-lg border">
+                <Label className="text-sm font-semibold">Terdapat Sub Indikator?</Label>
+                <select
+                  value={hasSubIndicators ? 'true' : 'false'}
+                  onChange={(e) => setHasSubIndicators(e.target.value === 'true')}
+                  className="w-full mt-2 px-3 py-2 border rounded-md"
+                  disabled={!!indicator && hasSubIndicators}
+                >
+                  <option value="false">Tidak Ada (Satu Nilai)</option>
+                  <option value="true">Ada Sub Indikator</option>
+                </select>
+                <p className="text-[10px] text-gray-500 italic mt-1">
+                  {hasSubIndicators
+                    ? 'Anda perlu menambahkan sub-indikator secara manual setelah membuat indikator ini.'
+                    : 'Sistem akan otomatis membuat sub-indikator tunggal dengan konfigurasi di bawah ini.'}
                 </p>
               </div>
-            )}
 
-            {/* Basic Index Value (Activity or Priority) */}
-            {(category?.configuration_style === 'activity' || formData.calculation_method === 'priority') && (
               <div className="space-y-2">
-                <Label htmlFor="indicator_base_value">Tarif Dasar / Nilai Rupiah *</Label>
-                <Input
-                  id="indicator_base_value"
-                  type="number"
-                  step="0.0001"
-                  min="0"
-                  value={formData.indicator_base_value}
-                  onChange={(e) => setFormData({ ...formData, indicator_base_value: e.target.value })}
-                  placeholder="contoh: 0.1250"
-                />
-                {errors.indicator_base_value && (
-                  <p className="text-sm text-red-600">{errors.indicator_base_value}</p>
-                )}
+                <Label htmlFor="calculation_method">Metode Kalkulasi *</Label>
+                <select
+                  id="calculation_method"
+                  value={formData.calculation_method}
+                  onChange={(e) => setFormData({ ...formData, calculation_method: e.target.value as 'indexing' | 'priority' })}
+                  className="w-full px-3 py-2 border rounded-md"
+                >
+                  <option value="indexing">Indexing (Dibagi berdasarkan Porsi Pool)</option>
+                  <option value="priority">Priority (Dikurangkan langsung dari Pool)</option>
+                </select>
                 <p className="text-xs text-gray-500">
-                  Nilai tarif pengali atau nilai rupiah langsung. Digunakan untuk metode Berbasis Aktivitas atau Priority.
+                  Priority digunakan untuk indikator yang memiliki nilai pasti (Rupiah) yang harus dibayarkan terlebih dahulu.
                 </p>
               </div>
-            )}
 
-            {/* INTEGRATED SUB-INDICATOR FIELDS (Shown only if hasSubIndicators is false) */}
-            {!hasSubIndicators && (
-              <div className="space-y-6 pt-4 border-t-2 border-dashed">
+
+              {/* Weight Percentage */}
+              {!isMedicalUnit && category?.is_weighted !== false && formData.calculation_method === 'indexing' && (
                 <div className="space-y-2">
-                  <Label className="text-blue-700 font-bold uppercase text-[10px] tracking-wider">Konfigurasi Pengukuran</Label>
-                  <div className="space-y-2">
-                    <Label htmlFor="measurement_type">Tipe Kriteria *</Label>
-                    <select
-                      id="measurement_type"
-                      value={formData.measurement_type}
-                      onChange={(e) => setFormData({ ...formData, measurement_type: e.target.value as 'scoring' | 'quantitative' })}
-                      className="w-full px-3 py-2 border rounded-md"
-                    >
-                      <option value="scoring">Pemberian Skor (Level 1-5)</option>
-                      <option value="quantitative">Nilai Kuantitatif (Volume × Tarif)</option>
-                    </select>
-                  </div>
+                  <Label htmlFor="weight_percentage">
+                    {category?.configuration_style === 'activity' ? 'Poin Indeks (%) *' : 'Persentase Bobot (%) *'}
+                  </Label>
+                  <Input
+                    id="weight_percentage"
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max="100"
+                    value={formData.weight_percentage}
+                    onChange={(e) => setFormData({ ...formData, weight_percentage: e.target.value })}
+                    placeholder="contoh: 25.00"
+                  />
+                  {errors.weight_percentage && (
+                    <p className="text-sm text-red-600">{errors.weight_percentage}</p>
+                  )}
+                  {formData.weight_percentage && !errors.weight_percentage && (() => {
+                    const weightInfo = getTotalWeightInfo()
+                    return (
+                      <p className={`text-xs font-medium ${weightInfo.isValid ? 'text-green-600' : 'text-amber-600'}`}>
+                        {weightInfo.message}
+                      </p>
+                    )
+                  })()}
+                  <p className="text-xs text-gray-500">
+                    Total semua bobot indikator indexing dalam kategori ini harus sama dengan 100%.
+                  </p>
                 </div>
+              )}
 
-                {formData.measurement_type === 'quantitative' && (
-                  <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
+              {/* Basic Index Value (Activity or Priority) */}
+              {(category?.configuration_style === 'activity' || formData.calculation_method === 'priority') && (
+                <div className="space-y-2">
+                  <Label htmlFor="indicator_base_value">Tarif Dasar / Nilai Rupiah *</Label>
+                  <Input
+                    id="indicator_base_value"
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    value={formData.indicator_base_value}
+                    onChange={(e) => setFormData({ ...formData, indicator_base_value: e.target.value })}
+                    placeholder="contoh: 0.1250"
+                  />
+                  {errors.indicator_base_value && (
+                    <p className="text-sm text-red-600">{errors.indicator_base_value}</p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    Nilai tarif pengali atau nilai rupiah langsung. Digunakan untuk metode Berbasis Aktivitas atau Priority.
+                  </p>
+                </div>
+              )}
+
+              {/* INTEGRATED SUB-INDICATOR FIELDS (Shown only if hasSubIndicators is false) */}
+              {!hasSubIndicators && (
+                <div className="space-y-6 pt-4 border-t-2 border-dashed">
+                  <div className="space-y-2">
+                    <Label className="text-blue-700 font-bold uppercase text-[10px] tracking-wider">Konfigurasi Pengukuran</Label>
                     <div className="space-y-2">
-                      <Label htmlFor="base_index_value_sub">Tarif Dasar / Nilai Indeks *</Label>
-                      <Input
-                        id="base_index_value_sub"
-                        type="number"
-                        step="any"
-                        value={formData.base_index_value}
-                        onChange={(e) => setFormData({ ...formData, base_index_value: e.target.value })}
-                        placeholder="contoh: 150000 atau 0.8"
-                      />
-                      {errors.base_index_value_sub && (
-                        <p className="text-sm text-red-600">{errors.base_index_value_sub}</p>
-                      )}
+                      <Label htmlFor="measurement_type">Tipe Kriteria *</Label>
+                      <select
+                        id="measurement_type"
+                        value={formData.measurement_type}
+                        onChange={(e) => setFormData({ ...formData, measurement_type: e.target.value as 'scoring' | 'quantitative' })}
+                        className="w-full px-3 py-2 border rounded-md"
+                      >
+                        <option value="scoring">Pemberian Skor (Level 1-5)</option>
+                        <option value="quantitative">Nilai Kuantitatif (Volume × Tarif)</option>
+                      </select>
                     </div>
+                  </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="measurement_unit_sub">Satuan Pengukuran</Label>
-                      <Input
-                        id="measurement_unit_sub"
-                        value={formData.measurement_unit}
-                        onChange={(e) => setFormData({ ...formData, measurement_unit: e.target.value })}
-                        placeholder="contoh: Menit, Dokumen, Pasien"
-                      />
-                    </div>
-
-                    {isMedicalUnit && (
-                      <div className="space-y-3 pt-2">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-xs font-bold">Jenis Layanan *</Label>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 text-[10px]"
-                            onClick={() => {
-                              if (formData.service_types.length === SERVICE_TYPES.length) {
-                                setFormData({ ...formData, service_types: [] })
-                              } else {
-                                setFormData({ ...formData, service_types: [...SERVICE_TYPES] })
-                              }
-                            }}
-                          >
-                            {formData.service_types.length === SERVICE_TYPES.length ? 'Batal Semua' : 'Pilih Semua'}
-                          </Button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 bg-white p-2 rounded border max-h-[150px] overflow-y-auto">
-                          {SERVICE_TYPES.map((type) => (
-                            <div key={type} className="flex items-center space-x-2">
-                              <input
-                                type="checkbox"
-                                id={`st-ind-${type}`}
-                                checked={formData.service_types.includes(type)}
-                                onChange={(e) => {
-                                  const checked = e.target.checked
-                                  const newTypes = checked
-                                    ? [...formData.service_types, type]
-                                    : formData.service_types.filter(t => t !== type)
-                                  setFormData({ ...formData, service_types: newTypes })
-                                }}
-                                className="h-4 w-4 rounded border-gray-300 text-blue-600"
-                              />
-                              <label htmlFor={`st-ind-${type}`} className="text-[10px] text-gray-700 cursor-pointer">
-                                {type}
-                              </label>
-                            </div>
-                          ))}
-                        </div>
-                        {errors.service_types && (
-                          <p className="text-sm text-red-600">{errors.service_types}</p>
+                  {formData.measurement_type === 'quantitative' && (
+                    <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                      <div className="space-y-2">
+                        <Label htmlFor="base_index_value_sub">Tarif Dasar / Nilai Indeks *</Label>
+                        <Input
+                          id="base_index_value_sub"
+                          type="number"
+                          step="any"
+                          value={formData.base_index_value}
+                          onChange={(e) => setFormData({ ...formData, base_index_value: e.target.value })}
+                          placeholder="contoh: 150000 atau 0.8"
+                        />
+                        {errors.base_index_value_sub && (
+                          <p className="text-sm text-red-600">{errors.base_index_value_sub}</p>
                         )}
                       </div>
-                    )}
-                  </div>
-                )}
 
-                {formData.measurement_type === 'scoring' && (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-bold uppercase">Kriteria Skor</Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={addScoringCriterion}
-                        className="h-7 text-xs"
-                      >
-                        <Plus className="h-3 w-3 mr-1" />
-                        Tambah
-                      </Button>
-                    </div>
-                    {errors.scoring_criteria && <p className="text-sm text-red-600">{errors.scoring_criteria}</p>}
-                    <div className="space-y-2">
-                      {formData.scoring_criteria.map((criterion, index) => (
-                        <div key={index} className="flex gap-2 items-start p-2 border rounded-lg bg-white">
-                          <div className="w-16">
-                            <Input
-                              type="number"
-                              value={criterion.score}
-                              onChange={(e) => updateScoringCriterion(index, 'score', e.target.value)}
-                              className="h-8 text-xs"
-                            />
+                      <div className="space-y-2">
+                        <Label htmlFor="measurement_unit_sub">Satuan Pengukuran</Label>
+                        <Input
+                          id="measurement_unit_sub"
+                          value={formData.measurement_unit}
+                          onChange={(e) => setFormData({ ...formData, measurement_unit: e.target.value })}
+                          placeholder="contoh: Menit, Dokumen, Pasien"
+                        />
+                      </div>
+
+                      {isMedicalUnit && (
+                        <div className="space-y-3 pt-2">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs font-bold">Jenis Layanan *</Label>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 text-[10px]"
+                              onClick={() => {
+                                if (formData.service_types.length === SERVICE_TYPES.length) {
+                                  setFormData({ ...formData, service_types: [] })
+                                } else {
+                                  setFormData({ ...formData, service_types: [...SERVICE_TYPES] })
+                                }
+                              }}
+                            >
+                              {formData.service_types.length === SERVICE_TYPES.length ? 'Batal Semua' : 'Pilih Semua'}
+                            </Button>
                           </div>
-                          <div className="flex-1">
-                            <Input
-                              value={criterion.label}
-                              onChange={(e) => updateScoringCriterion(index, 'label', e.target.value)}
-                              placeholder="Label kriteria"
-                              className="h-8 text-xs"
-                            />
+                          <div className="grid grid-cols-2 gap-2 bg-white p-2 rounded border max-h-[150px] overflow-y-auto">
+                            {SERVICE_TYPES.map((type) => (
+                              <div key={type} className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id={`st-ind-${type}`}
+                                  checked={formData.service_types.includes(type)}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked
+                                    const newTypes = checked
+                                      ? [...formData.service_types, type]
+                                      : formData.service_types.filter(t => t !== type)
+                                    setFormData({ ...formData, service_types: newTypes })
+                                  }}
+                                  className="h-4 w-4 rounded border-gray-300 text-blue-600"
+                                />
+                                <label htmlFor={`st-ind-${type}`} className="text-[10px] text-gray-700 cursor-pointer">
+                                  {type}
+                                </label>
+                              </div>
+                            ))}
                           </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeScoringCriterion(index)}
-                            disabled={formData.scoring_criteria.length <= 1}
-                            className="h-8 w-8 p-0 text-red-500"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {errors.service_types && (
+                            <p className="text-sm text-red-600">{errors.service_types}</p>
+                          )}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  </div>
-                )}
+                  )}
+
+                  {formData.measurement_type === 'scoring' && (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs font-bold uppercase">Kriteria Skor</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={addScoringCriterion}
+                          className="h-7 text-xs"
+                        >
+                          <Plus className="h-3 w-3 mr-1" />
+                          Tambah
+                        </Button>
+                      </div>
+                      {errors.scoring_criteria && <p className="text-sm text-red-600">{errors.scoring_criteria}</p>}
+                      <div className="space-y-2">
+                        {formData.scoring_criteria.map((criterion, index) => (
+                          <div key={index} className="flex gap-2 items-start p-2 border rounded-lg bg-white group hover:border-blue-200 transition-all shadow-sm">
+                            <div className="w-16">
+                              <Input
+                                type="number"
+                                value={criterion.score}
+                                onChange={(e) => updateScoringCriterion(index, 'score', e.target.value)}
+                                className="h-8 text-xs focus:ring-1 focus:ring-blue-500"
+                                title="Skor"
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <Input
+                                value={criterion.label}
+                                onChange={(e) => updateScoringCriterion(index, 'label', e.target.value)}
+                                placeholder="Label kriteria"
+                                className="h-8 text-xs focus:ring-1 focus:ring-blue-500"
+                              />
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeScoringCriterion(index)}
+                              disabled={formData.scoring_criteria.length <= 1}
+                              className="h-8 w-8 p-0 text-red-500 hover:bg-red-50"
+                              title="Hapus"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+
+              {/* Description */}
+              <div className="space-y-2">
+                <Label htmlFor="description">Deskripsi</Label>
+                <textarea
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-md min-h-[80px]"
+                  placeholder="Deskripsi opsional"
+                />
               </div>
-            )}
-
-
-            {/* Description */}
-            <div className="space-y-2">
-              <Label htmlFor="description">Deskripsi</Label>
-              <textarea
-                id="description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="w-full px-3 py-2 border rounded-md min-h-[80px]"
-                placeholder="Deskripsi opsional"
-              />
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="p-6 pt-2 border-t flex-shrink-0">
             <Button
               type="button"
               variant="outline"

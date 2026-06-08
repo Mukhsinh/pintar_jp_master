@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Plus, Trash2, AlertCircle } from 'lucide-react'
+import { Plus, Trash2, AlertCircle, ArrowUp, ArrowDown } from 'lucide-react'
 import type { KPIIndicator, KPISubIndicator, ScoringCriterion } from '@/lib/types/kpi.types'
 
 interface SubIndicatorFormDialogProps {
@@ -160,6 +160,17 @@ export default function SubIndicatorFormDialog({
         setFormData({ ...formData, scoring_criteria: newCriteria })
     }
 
+    function moveScoringCriterion(index: number, direction: 'up' | 'down') {
+        const newCriteria = [...formData.scoring_criteria]
+        const targetIndex = direction === 'up' ? index - 1 : index + 1
+        if (targetIndex < 0 || targetIndex >= newCriteria.length) return
+
+        const temp = newCriteria[index]
+        newCriteria[index] = newCriteria[targetIndex]
+        newCriteria[targetIndex] = temp
+        setFormData({ ...formData, scoring_criteria: newCriteria })
+    }
+
     function validateForm(): boolean {
         const newErrors: Record<string, string> = {}
 
@@ -271,9 +282,9 @@ export default function SubIndicatorFormDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[800px] flex flex-col max-h-[95vh] p-0 overflow-hidden">
-                <form onSubmit={handleSubmit} className="flex flex-col h-full">
-                    <DialogHeader className="p-6 pb-2 border-b">
+            <DialogContent className="sm:max-w-[800px] flex flex-col max-h-[90vh] p-0 overflow-hidden">
+                <form onSubmit={handleSubmit} className="flex flex-col min-h-0 h-full">
+                    <DialogHeader className="p-6 pb-2 border-b flex-shrink-0">
                         <DialogTitle>{subIndicator ? 'Ubah Sub Indikator' : 'Tambah Sub Indikator'}</DialogTitle>
                         <DialogDescription>
                             {subIndicator
@@ -282,7 +293,7 @@ export default function SubIndicatorFormDialog({
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+                    <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
                         <div className="space-y-4">
                             <div className="space-y-2">
                                 <Label htmlFor="sub_name">Nama Sub Indikator *</Label>
@@ -458,7 +469,31 @@ export default function SubIndicatorFormDialog({
 
                                         <div className="space-y-3">
                                             {formData.scoring_criteria.map((criterion, index) => (
-                                                <div key={index} className="grid grid-cols-12 gap-2 items-start p-3 border rounded-lg bg-gray-50">
+                                                <div key={index} className="grid grid-cols-12 gap-2 items-start p-3 border rounded-lg bg-gray-50 group hover:border-blue-200 transition-all shadow-sm">
+                                                    <div className="col-span-1 flex flex-col gap-1 pt-1">
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => moveScoringCriterion(index, 'up')}
+                                                            disabled={index === 0}
+                                                            className="h-6 w-6 p-0 hover:bg-blue-50"
+                                                            title="Geser Naik"
+                                                        >
+                                                            <ArrowUp className="h-3 w-3 text-gray-500" />
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => moveScoringCriterion(index, 'down')}
+                                                            disabled={index === formData.scoring_criteria.length - 1}
+                                                            className="h-6 w-6 p-0 hover:bg-blue-50"
+                                                            title="Geser Turun"
+                                                        >
+                                                            <ArrowDown className="h-3 w-3 text-gray-500" />
+                                                        </Button>
+                                                    </div>
                                                     <div className="col-span-3 space-y-1">
                                                         <Label className="text-xs">Skor</Label>
                                                         <Input
@@ -466,16 +501,16 @@ export default function SubIndicatorFormDialog({
                                                             step="0.01"
                                                             value={criterion.score}
                                                             onChange={(e) => updateScoringCriterion(index, 'score', e.target.value)}
-                                                            className={errors[`score_${index}`] ? 'border-red-500' : ''}
+                                                            className={`h-9 ${errors[`score_${index}`] ? 'border-red-500' : 'focus:ring-1 focus:ring-blue-500'}`}
                                                         />
                                                         {errors[`score_${index}`] && <p className="text-[10px] text-red-500">{errors[`score_${index}`]}</p>}
                                                     </div>
-                                                    <div className="col-span-7 space-y-1">
+                                                    <div className="col-span-6 space-y-1">
                                                         <Label className="text-xs">Label / Kriteria</Label>
                                                         <Input
                                                             value={criterion.label}
                                                             onChange={(e) => updateScoringCriterion(index, 'label', e.target.value)}
-                                                            className={errors[`label_${index}`] ? 'border-red-500' : ''}
+                                                            className={`h-9 ${errors[`label_${index}`] ? 'border-red-500' : 'focus:ring-1 focus:ring-blue-500'}`}
                                                             placeholder="Deskripsi kriteria"
                                                         />
                                                         {errors[`label_${index}`] && <p className="text-[10px] text-red-500">{errors[`label_${index}`]}</p>}
@@ -487,7 +522,8 @@ export default function SubIndicatorFormDialog({
                                                             size="sm"
                                                             onClick={() => removeScoringCriterion(index)}
                                                             disabled={formData.scoring_criteria.length <= 1}
-                                                            className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                                            className="text-red-500 hover:text-red-700 hover:bg-red-50 h-9 w-9 p-0"
+                                                            title="Hapus"
                                                         >
                                                             <Trash2 className="h-4 w-4" />
                                                         </Button>
