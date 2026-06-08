@@ -8,6 +8,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -55,18 +56,20 @@ export default function PoolDetailsDialog({
   const [revenueItems, setRevenueItems] = useState<RevenueItem[]>([])
   const [deductionItems, setDeductionItems] = useState<DeductionItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  
+
   // Revenue form
   const [revenueForm, setRevenueForm] = useState({ description: '', amount: '' })
   const [editingRevenue, setEditingRevenue] = useState<string | null>(null)
-  
+
   // Deduction form
   const [deductionForm, setDeductionForm] = useState({ description: '', amount: '' })
   const [editingDeduction, setEditingDeduction] = useState<string | null>(null)
+  const [allocationPercentage, setAllocationPercentage] = useState('')
 
   useEffect(() => {
     if (pool && open) {
       loadPoolItems()
+      setAllocationPercentage(pool.global_allocation_percentage.toString())
     }
   }, [pool, open])
 
@@ -111,7 +114,7 @@ export default function PoolDetailsDialog({
 
     try {
       const supabase = createClient()
-      
+
       if (editingRevenue) {
         // Update existing revenue
         const { error } = await supabase
@@ -195,7 +198,7 @@ export default function PoolDetailsDialog({
 
     try {
       const supabase = createClient()
-      
+
       if (editingDeduction) {
         // Update existing deduction
         const { error } = await supabase
@@ -306,6 +309,47 @@ export default function PoolDetailsDialog({
     }
   }
 
+  async function handleUpdatePercentage() {
+    if (!pool || !allocationPercentage) return
+    if (pool.status !== 'draft') return
+
+    const percentage = parseFloat(allocationPercentage)
+    if (isNaN(percentage) || percentage < 0 || percentage > 100) {
+      alert('Persentase harus antara 0 dan 100')
+      setAllocationPercentage(pool.global_allocation_percentage.toString())
+      return
+    }
+
+    if (percentage === pool.global_allocation_percentage) return
+
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('t_pool')
+        .update({
+          global_allocation_percentage: percentage
+        })
+        .eq('id', pool.id)
+
+      if (error) throw error
+      onUpdate()
+    } catch (error: any) {
+      console.error('Error updating percentage:', error)
+      alert(error.message || 'Gagal memperbarui persentase')
+      setAllocationPercentage(pool.global_allocation_percentage.toString())
+    }
+  }
+
+  async function handleFinalSave() {
+    if (isDraft) {
+      const percentage = parseFloat(allocationPercentage)
+      if (!isNaN(percentage) && percentage !== pool.global_allocation_percentage) {
+        await handleUpdatePercentage()
+      }
+    }
+    onOpenChange(false)
+  }
+
   if (!pool) return null
 
   const isDraft = pool.status === 'draft'
@@ -322,23 +366,22 @@ export default function PoolDetailsDialog({
         </DialogHeader>
 
         <div className="space-y-6 py-4">
-          {/* Summary */}
-          <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
-            <div>
-              <p className="text-sm text-gray-600">Total Pendapatan</p>
-              <p className="text-lg font-semibold">{formatCurrency(pool.revenue_total)}</p>
+          <div className="grid grid-cols-4 gap-2 p-3 bg-gray-50 border border-gray-100 rounded-lg mb-6">
+            <div className="px-2">
+              <p className="text-[10px] uppercase font-bold text-gray-500 mb-0.5">Total Pendapatan</p>
+              <p className="text-sm font-semibold text-gray-900">{formatCurrency(pool.revenue_total)}</p>
             </div>
-            <div>
-              <p className="text-sm text-gray-600">Total Potongan</p>
-              <p className="text-lg font-semibold">{formatCurrency(pool.deduction_total)}</p>
+            <div className="px-2 border-l border-gray-200">
+              <p className="text-[10px] uppercase font-bold text-gray-500 mb-0.5">Total Potongan</p>
+              <p className="text-sm font-semibold text-gray-900">{formatCurrency(pool.deduction_total)}</p>
             </div>
-            <div>
-              <p className="text-sm text-gray-600">Pool Bersih</p>
-              <p className="text-xl font-bold text-blue-600">{formatCurrency(pool.net_pool || 0)}</p>
+            <div className="px-2 border-l border-gray-200">
+              <p className="text-[10px] uppercase font-bold text-blue-600 mb-0.5">Pool Bersih</p>
+              <p className="text-base font-bold text-blue-700">{formatCurrency(pool.net_pool || 0)}</p>
             </div>
-            <div>
-              <p className="text-sm text-gray-600">Jumlah Dialokasikan ({pool.global_allocation_percentage}%)</p>
-              <p className="text-xl font-bold text-green-600">{formatCurrency(pool.allocated_amount || 0)}</p>
+            <div className="px-2 border-l border-gray-200">
+              <p className="text-[10px] uppercase font-bold text-green-600 mb-0.5">Dialokasikan ({pool.global_allocation_percentage}%)</p>
+              <p className="text-base font-bold text-green-700">{formatCurrency(pool.allocated_amount || 0)}</p>
             </div>
           </div>
 
@@ -347,7 +390,7 @@ export default function PoolDetailsDialog({
             <div className="flex justify-between items-center mb-3">
               <h3 className="text-lg font-semibold">Item Pendapatan</h3>
             </div>
-            
+
             {isDraft && (
               <div className="flex gap-2 mb-3">
                 <Input
@@ -415,7 +458,7 @@ export default function PoolDetailsDialog({
             <div className="flex justify-between items-center mb-3">
               <h3 className="text-lg font-semibold">Item Potongan</h3>
             </div>
-            
+
             {isDraft && (
               <div className="flex gap-2 mb-3">
                 <Input
@@ -478,6 +521,39 @@ export default function PoolDetailsDialog({
             </div>
           </div>
         </div>
+
+        <DialogFooter className="border-t pt-4 px-6 pb-6">
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-3">
+              {isDraft && (
+                <>
+                  <span className="text-xs font-semibold text-gray-600">Konfigurasi Alokasi:</span>
+                  <div className="flex items-center bg-white border border-gray-300 rounded overflow-hidden focus-within:ring-1 focus-within:ring-blue-500">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      className="w-16 h-8 text-xs font-bold text-right focus:outline-none px-2"
+                      value={allocationPercentage}
+                      onChange={(e) => setAllocationPercentage(e.target.value)}
+                    />
+                    <div className="bg-gray-50 border-l border-gray-200 px-2 h-8 flex items-center">
+                      <span className="text-[10px] font-bold text-gray-400">%</span>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            <Button
+              size="sm"
+              onClick={handleFinalSave}
+              className="h-8 bg-blue-600 hover:bg-blue-700 text-white text-xs px-8"
+            >
+              Simpan
+            </Button>
+          </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

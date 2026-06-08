@@ -44,6 +44,15 @@ export default function PoolManagementPage() {
 
       if (error) throw error
       setPools(data || [])
+
+      // Update selected pool if it's currently being viewed/edited
+      if (data) {
+        setSelectedPool(prev => {
+          if (!prev) return null
+          const updated = data.find(p => p.id === prev.id)
+          return updated || prev
+        })
+      }
     } catch (error: any) {
       console.error('Error loading pools:', error)
       setError(error.message || 'Gagal memuat data pool')
@@ -113,7 +122,7 @@ export default function PoolManagementPage() {
         const errorText = await response.text()
         throw new Error(errorText || 'Gagal mengunduh petunjuk')
       }
-      
+
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -139,7 +148,7 @@ export default function PoolManagementPage() {
           <p className="text-gray-600 mt-1">Kelola pool keuangan untuk distribusi insentif</p>
         </div>
         <div className="flex gap-3">
-          <Button 
+          <Button
             onClick={handleDownloadGuide}
             disabled={isDownloadingGuide}
             className="bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50"
