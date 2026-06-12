@@ -154,14 +154,33 @@ export default function AssessmentFormDialog({
         const data = await response.json()
         const assessmentMap: Record<string, AssessmentData> = {}
 
-        data.assessments?.forEach((assessment: any) => {
-          assessmentMap[assessment.indicator_id] = {
-            indicator_id: assessment.indicator_id,
-            realization_value: assessment.realization_value,
-            achievement_percentage: assessment.achievement_percentage || 0,
-            score: assessment.score || 0,
-            notes: assessment.notes || '',
-            sub_assessments: assessment.sub_assessments || []
+        data.assessments?.forEach((item: any) => {
+          const indicatorId = item.indicator_id
+
+          if (!assessmentMap[indicatorId]) {
+            assessmentMap[indicatorId] = {
+              indicator_id: indicatorId,
+              realization_value: 0,
+              achievement_percentage: 0,
+              score: 0,
+              notes: '',
+              sub_assessments: []
+            }
+          }
+
+          if (item.sub_indicator_id) {
+            // This is a sub-assessment row
+            assessmentMap[indicatorId].sub_assessments.push({
+              sub_indicator_id: item.sub_indicator_id,
+              realization_value: item.realization_value,
+              score: item.score || 0
+            })
+          } else {
+            // This is the main indicator row
+            assessmentMap[indicatorId].realization_value = item.realization_value
+            assessmentMap[indicatorId].achievement_percentage = item.achievement_percentage || 0
+            assessmentMap[indicatorId].score = item.score || 0
+            assessmentMap[indicatorId].notes = item.notes || ''
           }
         })
 
@@ -370,18 +389,77 @@ export default function AssessmentFormDialog({
         if (data.assessments && data.assessments.length > 0) {
           const assessmentMap: Record<string, AssessmentData> = {}
 
-          data.assessments.forEach((assessment: any) => {
-            assessmentMap[assessment.indicator_id] = {
-              indicator_id: assessment.indicator_id,
-              realization_value: assessment.realization_value,
-              achievement_percentage: assessment.achievement_percentage || 0,
-              score: assessment.score || 0,
-              notes: assessment.notes || '',
-              sub_assessments: assessment.sub_assessments || []
+          data.assessments.forEach((item: any) => {
+            const indicatorId = item.indicator_id
+
+            if (!assessmentMap[indicatorId]) {
+              assessmentMap[indicatorId] = {
+                indicator_id: indicatorId,
+                realization_value: 0,
+                achievement_percentage: 0,
+                score: 0,
+                notes: '',
+                sub_assessments: []
+              }
+            }
+
+            if (item.sub_indicator_id) {
+              assessmentMap[indicatorId].sub_assessments.push({
+                sub_indicator_id: item.sub_indicator_id,
+                realization_value: item.realization_value,
+                score: item.score || 0
+              })
+            } else {
+              assessmentMap[indicatorId].realization_value = item.realization_value
+              assessmentMap[indicatorId].achievement_percentage = item.achievement_percentage || 0
+              assessmentMap[indicatorId].score = item.score || 0
+              assessmentMap[indicatorId].notes = item.notes || ''
             }
           })
 
+          // Update current state with copied values
           setAssessments((prev) => ({ ...prev, ...assessmentMap }))
+
+          // Show intermediate success toast
+          toast.info('Data berhasil disalin, sedang memproses penyimpanan otomatis...')
+
+          // Critical: We need to perform the save using the newly grouped map 
+          // because setAssessments state update won't be available immediately for handleSave
+          setSaving(true)
+
+          // Refactored save logic for direct data
+          const savePromises = categories.flatMap(category =>
+            category.indicators.map(async (indicator) => {
+              const assessment = assessmentMap[indicator.id] || {
+                indicator_id: indicator.id,
+                realization_value: 0,
+                achievement_percentage: 0,
+                score: 0,
+                notes: '',
+                sub_assessments: []
+              }
+
+              return fetch('/api/assessment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  employee_id: employee.employee_id,
+                  indicator_id: indicator.id,
+                  period: period,
+                  realization_value: assessment.realization_value,
+                  target_value: getIndicatorTarget(indicator),
+                  weight_percentage: indicator.weight_percentage,
+                  notes: assessment.notes,
+                  sub_assessments: assessment.sub_assessments
+                })
+              })
+            })
+          )
+
+          await Promise.all(savePromises)
+          toast.success('Penilaian berhasil disalin dan disimpan!')
+          onSaved()
+          onClose()
         } else {
           setError('Tidak ada data penilaian sebelumnya untuk disalin.')
         }
@@ -393,6 +471,7 @@ export default function AssessmentFormDialog({
       setError('Terjadi kesalahan saat menyalin data.')
     } finally {
       setCopyingPrevious(false)
+      setSaving(false)
     }
   }
 
@@ -412,13 +491,31 @@ export default function AssessmentFormDialog({
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Target className="h-5 w-5" />
-            Penilaian KPI - {employee.full_name}
-          </DialogTitle>
-          <DialogDescription>
-            Periode: {period} • Unit: {employee.unit_name}
-          </DialogDescription>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div>
+              <DialogTitle className="flex items-center gap-2 text-xl">
+                <Target className="h-5 w-5 text-blue-600" />
+                Penilaian KPI - {employee.full_name}
+              </DialogTitle>
+              <DialogDescription>
+                Periode: {period} • Unit: {employee.unit_name}
+              </DialogDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 font-semibold shadow-sm"
+              onClick={handleCopyPrevious}
+              disabled={saving || copyingPrevious || loading}
+            >
+              {copyingPrevious ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Copy className="h-4 w-4 mr-2" />
+              )}
+              {copyingPrevious ? 'Menyalin & Menyimpan...' : 'Salin Penilaian Sebelumnya'}
+            </Button>
+          </div>
         </DialogHeader>
 
         {error && (
@@ -841,15 +938,7 @@ export default function AssessmentFormDialog({
         </div>
 
         <div className="flex justify-between items-center pt-4 border-t w-full">
-          <Button
-            variant="outline"
-            className="text-blue-600 border-blue-200 hover:bg-blue-50"
-            onClick={handleCopyPrevious}
-            disabled={saving || copyingPrevious || loading}
-          >
-            <Copy className="h-4 w-4 mr-2" />
-            {copyingPrevious ? 'Menyalin...' : 'Salin Penilaian'}
-          </Button>
+          <div className="flex-1" />
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose} disabled={saving}>
               Batal

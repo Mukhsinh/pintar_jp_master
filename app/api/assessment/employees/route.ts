@@ -83,7 +83,10 @@ export async function GET(request: NextRequest) {
       statusQuery = statusQuery.eq('status', status)
     }
 
-    const { data: employees, error: statusError } = await statusQuery.order('full_name')
+    const { data: rawEmployees, error: statusError } = await statusQuery.order('full_name')
+
+    // Filter out superadmins in memory as a fallback for views without the role column
+    const employees = (rawEmployees || []).filter((emp: any) => emp.role !== 'superadmin')
 
     if (statusError) {
       console.error('View fetch error:', statusError)

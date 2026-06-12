@@ -31,6 +31,7 @@ export async function getPegawaiWithUnits(
     let query = supabase
       .from('m_employees')
       .select('*, m_units(name)', { count: 'exact' })
+      .neq('role', 'superadmin')
       .order('created_at', { ascending: false })
 
     // Apply search filter
@@ -88,17 +89,18 @@ export async function createPegawai(data: CreatePegawaiData) {
       .insert([{
         employee_code: data.employee_code,
         full_name: data.full_name,
+        email: data.email || null,
         unit_id: data.unit_id,
         tax_status: data.tax_status || 'TK/0',
         tax_type: taxType as any,
-        nik: data.nik,
-        bank_name: data.bank_name,
-        bank_account_number: data.bank_account_number,
-        bank_account_name: data.bank_account_name,
-        position: data.position,
-        phone: data.phone,
+        nik: data.nik || null,
+        bank_name: data.bank_name || null,
+        bank_account_number: data.bank_account_number || null,
+        bank_account_name: data.bank_account_name || null,
+        position: data.position || null,
+        phone: data.phone || null,
         role: data.role || 'employee',
-        employee_status: data.employee_status || 'active',
+        employee_status: data.employee_status || (data.employment_status || 'PNS'),
         employment_status: data.employment_status || 'PNS',
         pns_grade: data.pns_grade ? String(data.pns_grade) : null,
         is_active: data.is_active !== undefined ? data.is_active : true,
@@ -140,17 +142,19 @@ export async function updatePegawai(id: string, data: UpdatePegawaiData): Promis
       .update({
         employee_code: data.employee_code,
         full_name: data.full_name,
+        email: data.email || null,
         unit_id: data.unit_id,
-        position: data.position,
-        phone: data.phone,
-        nik: data.nik,
-        bank_name: data.bank_name,
-        bank_account_number: data.bank_account_number,
-        bank_account_name: data.bank_account_name,
+        position: data.position || null,
+        phone: data.phone || null,
+        nik: data.nik || null,
+        bank_name: data.bank_name || null,
+        bank_account_number: data.bank_account_number || null,
+        bank_account_name: data.bank_account_name || null,
         tax_status: data.tax_status,
         tax_type: data.tax_type,
         employment_status: data.employment_status,
-        pns_grade: data.pns_grade !== undefined ? String(data.pns_grade) : undefined,
+        employee_status: data.employee_status || (data.employment_status as string),
+        pns_grade: data.pns_grade !== undefined ? String(data.pns_grade) : null,
         is_active: data.is_active,
         updated_at: new Date().toISOString()
       })
@@ -217,6 +221,7 @@ export async function getUnitsForDropdown(): Promise<{ data: Array<{ id: string;
       .from('m_units')
       .select('id, name')
       .eq('is_active', true)
+      .neq('code', 'superadmin')
       .order('name')
 
     if (error) {

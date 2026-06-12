@@ -16,11 +16,11 @@ export async function getPegawai(
     let query = supabase
       .from('m_employees')
       .select(`
-        id, employee_code, full_name, unit_id, position, phone, 
+        id, user_id, employee_code, full_name, role, email, unit_id, position, phone, 
         nik, bank_name, bank_account_number, bank_account_name,
-        tax_status, employee_status, tax_type, pns_grade,
+        tax_status, employment_status, employee_status, tax_type, pns_grade,
         is_active, created_at, updated_at, 
-        m_units(name)
+        m_units(id, name, code)
       `, { count: 'exact' })
       .order('created_at', { ascending: false })
 
@@ -66,11 +66,11 @@ export async function getPegawaiById(
     const { data, error } = await supabase
       .from('m_employees')
       .select(`
-        id, employee_code, full_name, unit_id, position, phone,
+        id, user_id, employee_code, full_name, role, email, unit_id, position, phone,
         nik, bank_name, bank_account_number, bank_account_name,
-        tax_status, employee_status, tax_type, pns_grade,
+        tax_status, employment_status, employee_status, tax_type, pns_grade,
         is_active, created_at, updated_at,
-        m_units(name)
+        m_units(id, name, code)
       `)
       .eq('id', id)
       .single()
@@ -190,11 +190,11 @@ export async function getPegawaiByUnit(
     const { data, error } = await supabase
       .from('m_employees')
       .select(`
-        id, employee_code, full_name, unit_id, position, phone,
+        id, user_id, employee_code, full_name, role, email, unit_id, position, phone,
         nik, bank_name, bank_account_number, bank_account_name,
-        tax_status, employee_status, tax_type, pns_grade,
+        tax_status, employment_status, employee_status, tax_type, pns_grade,
         is_active, created_at, updated_at,
-        m_units(name)
+        m_units(id, name, code)
       `)
       .eq('unit_id', unitId)
       .eq('is_active', true)

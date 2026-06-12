@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Plus, Search, Filter, RefreshCw, BarChart3, AlertCircle } from 'lucide-react'
+import { Plus, Search, Filter, RefreshCw, BarChart3, AlertCircle, Copy, Loader2 } from 'lucide-react'
 import AssessmentTable from './AssessmentTable'
 import AssessmentReports from './AssessmentReports'
 import AddAssessmentPeriodDialog from './AddAssessmentPeriodDialog'
@@ -45,6 +45,7 @@ export default function AssessmentPageContent({
     not_started: 0,
     completion_rate: 0
   })
+  const [copyingUnit, setCopyingUnit] = useState(false)
 
   // Load available periods from API
   const loadPeriods = async () => {
@@ -159,6 +160,71 @@ export default function AssessmentPageContent({
     loadSummary()
   }
 
+  const handleBulkCopy = async () => {
+    if (!selectedPeriod) return
+
+    // 1. Identify unit_id
+    let unitId = ''
+    let unitName = ''
+
+    if (currentEmployee.role === 'unit_manager') {
+      unitId = currentEmployee.unit_id
+      unitName = 'unit Anda'
+    } else {
+      // For superadmin, check if the current view is focused on one unit
+      const uniqueUnits = Array.from(new Set(filteredEmployees.map(e => JSON.stringify({ id: e.unit_id, name: e.unit_name }))))
+      if (uniqueUnits.length === 0) {
+        alert('Tidak ada pegawai untuk disalin.')
+        return
+      }
+      if (uniqueUnits.length !== 1) {
+        alert('Mohon filter pencarian berdasarkan unit spesifik terlebih dahulu agar sistem dapat melakukan penyalinan massal untuk unit tersebut.')
+        return
+      }
+      const unitData = JSON.parse(uniqueUnits[0])
+      unitId = unitData.id
+      unitName = unitData.name
+    }
+
+    // 2. Identify previous period (assuming descending sort)
+    const currentIndex = availablePeriods.indexOf(selectedPeriod)
+    if (currentIndex === -1 || currentIndex === availablePeriods.length - 1) {
+      alert('Tidak ditemukan periode sebelumnya (prioritas periode di bawah pilihan saat ini) untuk disalin.')
+      return
+    }
+    const previousPeriod = availablePeriods[currentIndex + 1]
+
+    if (!confirm(`Konfirmasi: Salin penilaian SELURUH pegawai di ${unitName} dari periode ${previousPeriod} ke periode ${selectedPeriod}?\n\nPeringatan: Data penilaian yang sudah ada di periode ${selectedPeriod} untuk pegawai tersebut akan diperbarui/ditimpa.`)) {
+      return
+    }
+
+    setCopyingUnit(true)
+    try {
+      const response = await fetch('/api/assessment/bulk-copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit_id: unitId,
+          current_period: selectedPeriod,
+          previous_period: previousPeriod
+        })
+      })
+
+      const data = await response.json()
+      if (response.ok) {
+        alert(data.message || 'Penyalinan massal berhasil!')
+        handleRefresh()
+      } else {
+        alert('Gagal: ' + (data.error || 'Terjadi kesalahan'))
+      }
+    } catch (error) {
+      console.error('Bulk copy error:', error)
+      alert('Terjadi kesalahan sistem saat melakukan penyalinan massal.')
+    } finally {
+      setCopyingUnit(false)
+    }
+  }
+
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -270,10 +336,22 @@ export default function AssessmentPageContent({
                     Kelola penilaian KPI untuk pegawai di periode {selectedPeriod}
                   </CardDescription>
                 </div>
-                <Button onClick={handleRefresh} variant="outline" size="sm" disabled={loading}>
-                  <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={handleBulkCopy}
+                    variant="outline"
+                    size="sm"
+                    disabled={loading || copyingUnit}
+                    className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
+                  >
+                    {copyingUnit ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Copy className="h-4 w-4 mr-2" />}
+                    Salin Penilaian Unit
+                  </Button>
+                  <Button onClick={handleRefresh} variant="outline" size="sm" disabled={loading || copyingUnit}>
+                    <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>

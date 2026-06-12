@@ -110,8 +110,8 @@ export class DashboardService {
       const resolvedPeriods = await this.getResolvedPeriods(supabase, period, year)
 
       // Parallel direct queries instead of RPC
-      let empQuery = supabase.from('m_employees').select('id', { count: 'exact', head: true }).eq('is_active', true)
-      let unitQuery = supabase.from('m_units').select('id', { count: 'exact', head: true }).eq('is_active', true)
+      let empQuery = supabase.from('m_employees').select('id', { count: 'exact', head: true }).eq('is_active', true).neq('role', 'superadmin')
+      let unitQuery = supabase.from('m_units').select('id', { count: 'exact', head: true }).eq('is_active', true).neq('code', 'superadmin')
 
       let assQuery = supabase
         .from('t_kpi_assessments')
@@ -270,6 +270,7 @@ export class DashboardService {
             )
           )
         `)
+        .neq('m_employees.role', 'superadmin')
         .in('period', resolvedPeriods)
 
       if (unitId) {
@@ -385,6 +386,7 @@ export class DashboardService {
             )
           )
         `)
+        .neq('m_employees.role', 'superadmin')
         .in('period', resolvedPeriods)
 
       if (unitId) {
@@ -481,9 +483,10 @@ export class DashboardService {
         .from('m_units')
         .select(`
           id, name,
-          m_employees!m_employees_unit_id_fkey ( id, is_active )
+          m_employees!m_employees_unit_id_fkey ( id, is_active, role )
         `)
         .eq('is_active', true)
+        .neq('code', 'superadmin')
         .order('name')
 
       if (error) {
@@ -553,7 +556,7 @@ export class DashboardService {
 
       return (units || []).map(unit => {
         const employees = (unit.m_employees as any[]) || []
-        const activeEmployees = employees.filter((e: any) => e.is_active)
+        const activeEmployees = employees.filter((e: any) => e.is_active && e.role !== 'superadmin')
         const employeeCount = activeEmployees.length
 
         // Calculate unit avg score from employee final scores

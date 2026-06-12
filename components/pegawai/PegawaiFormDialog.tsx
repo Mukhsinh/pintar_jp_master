@@ -35,6 +35,7 @@ export function PegawaiFormDialog({ open, onClose, onSuccess, pegawai }: Pegawai
   const [formData, setFormData] = useState({
     employee_code: '',
     full_name: '',
+    email: '',
     unit_id: '',
     tax_status: 'TK/0',
     employment_status: 'PNS' as 'PNS' | 'PPPK' | 'PPPK PARUH WAKTU' | 'BLUD',
@@ -73,6 +74,7 @@ export function PegawaiFormDialog({ open, onClose, onSuccess, pegawai }: Pegawai
       setFormData({
         employee_code: pegawai.employee_code,
         full_name: pegawai.full_name,
+        email: pegawai.email || '',
         unit_id: pegawai.unit_id,
         tax_status: pegawai.tax_status || 'TK/0',
         employment_status: pegawai.employment_status || (pegawai.employee_status as any === 'active' ? 'ASN' : (pegawai.employee_status as any || 'ASN')),
@@ -88,6 +90,7 @@ export function PegawaiFormDialog({ open, onClose, onSuccess, pegawai }: Pegawai
       setFormData({
         employee_code: '',
         full_name: '',
+        email: '',
         unit_id: '',
         tax_status: 'TK/0',
         employment_status: 'PNS',
@@ -172,6 +175,18 @@ export function PegawaiFormDialog({ open, onClose, onSuccess, pegawai }: Pegawai
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
+              <Label htmlFor="email">Email (Opsional)</Label>
+              <Input
+                id="email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="email@rsudgoeteng.id"
+                disabled={loading}
+              />
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="unit_id">Unit *</Label>
               <select
                 id="unit_id"
@@ -189,7 +204,9 @@ export function PegawaiFormDialog({ open, onClose, onSuccess, pegawai }: Pegawai
                 ))}
               </select>
             </div>
+          </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="employment_status">Status Kepegawaian *</Label>
               <Select
@@ -213,9 +230,7 @@ export function PegawaiFormDialog({ open, onClose, onSuccess, pegawai }: Pegawai
                 </SelectContent>
               </Select>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="tax_status">Status Pajak (PTKP) *</Label>
               <Select
@@ -237,7 +252,9 @@ export function PegawaiFormDialog({ open, onClose, onSuccess, pegawai }: Pegawai
                 </SelectContent>
               </Select>
             </div>
+          </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {formData.employment_status === 'PNS' && (
               <div className="space-y-2">
                 <Label htmlFor="pns_grade">Golongan PNS</Label>
@@ -257,9 +274,7 @@ export function PegawaiFormDialog({ open, onClose, onSuccess, pegawai }: Pegawai
                 </Select>
               </div>
             )}
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="position">Jabatan</Label>
               <Input
@@ -270,7 +285,9 @@ export function PegawaiFormDialog({ open, onClose, onSuccess, pegawai }: Pegawai
                 disabled={loading}
               />
             </div>
+          </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="nik">NIK</Label>
               <Input
@@ -282,9 +299,7 @@ export function PegawaiFormDialog({ open, onClose, onSuccess, pegawai }: Pegawai
                 maxLength={16}
               />
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
             <div className="space-y-2">
               <Label htmlFor="phone">Telepon</Label>
               <Input
@@ -295,7 +310,9 @@ export function PegawaiFormDialog({ open, onClose, onSuccess, pegawai }: Pegawai
                 disabled={loading}
               />
             </div>
+          </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="bank_name">Nama Bank</Label>
               <Input
@@ -306,9 +323,7 @@ export function PegawaiFormDialog({ open, onClose, onSuccess, pegawai }: Pegawai
                 disabled={loading}
               />
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="bank_account_number">Nomor Rekening</Label>
               <Input
@@ -319,7 +334,9 @@ export function PegawaiFormDialog({ open, onClose, onSuccess, pegawai }: Pegawai
                 disabled={loading}
               />
             </div>
+          </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="bank_account_name">Nama Pemegang Rekening</Label>
               <Input

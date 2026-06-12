@@ -110,13 +110,13 @@ export async function POST(request: NextRequest) {
       const email = getVal(row, ['Email'])?.toString().trim().toLowerCase()
 
       try {
-        if (!employeeCode || !fullName || !unitCode || !email) {
+        if (!employeeCode || !fullName || !unitCode) {
           // Skip truly empty rows silently
           const nonEmpty = Object.values(row).filter(v => v !== '' && v !== undefined && v !== null)
           if (nonEmpty.length <= 1) continue
 
           results.failed++
-          results.errors.push(`Baris ${rowNum} - Data wajib tidak lengkap (Kode: ${employeeCode || '-'}, Nama: ${fullName || '-'}, Unit: ${unitCode || '-'}, Email: ${email || '-'})`)
+          results.errors.push(`Baris ${rowNum} - Data wajib tidak lengkap (Kode: ${employeeCode || '-'}, Nama: ${fullName || '-'}, Unit: ${unitCode || '-'})`)
           continue
         }
 
@@ -132,10 +132,16 @@ export async function POST(request: NextRequest) {
         const statusStr = getVal(row, ['Status', 'Active'])?.toString().trim().toLowerCase()
 
         const rawEmploymentStatus = String(getVal(row, ['Status Pegawai', 'Employment Status']) || '').toUpperCase()
-        let employmentStatus: 'PNS' | 'PPPK' | 'BLUD' = 'BLUD'
-        if (rawEmploymentStatus.includes('PNS') || rawEmploymentStatus.includes('ASN')) employmentStatus = 'PNS'
-        else if (rawEmploymentStatus.includes('PPPK')) employmentStatus = 'PPPK'
-        else if (rawEmploymentStatus.includes('BLUD')) employmentStatus = 'BLUD'
+        let employmentStatus: 'PNS' | 'PPPK' | 'PPPK PARUH WAKTU' | 'BLUD' = 'BLUD'
+        if (rawEmploymentStatus.includes('PNS') || rawEmploymentStatus.includes('ASN')) {
+          employmentStatus = 'PNS'
+        } else if (rawEmploymentStatus.includes('PARUH WAKTU')) {
+          employmentStatus = 'PPPK PARUH WAKTU'
+        } else if (rawEmploymentStatus.includes('PPPK')) {
+          employmentStatus = 'PPPK'
+        } else if (rawEmploymentStatus.includes('BLUD')) {
+          employmentStatus = 'BLUD'
+        }
 
         const rawGrade = String(getVal(row, ['Golongan', 'Grade']) || '').trim().replace(/[^0-9]/g, '')
         const pnsGrade = employmentStatus === 'PNS' ? (rawGrade || null) : null
@@ -178,33 +184,35 @@ export async function POST(request: NextRequest) {
 
         // --- Auth User Sync (using pre-fetched map) ---
         let authUserId: string | null = null
-        const existingAuthUser = authUserByEmail.get(email)
+        if (email) {
+          const existingAuthUser = authUserByEmail.get(email)
 
-        if (existingAuthUser) {
-          authUserId = existingAuthUser.id
-          // Update metadata silently
-          await supabaseAdmin.auth.admin.updateUserById(authUserId, {
-            user_metadata: { role: normalizedRole, full_name: fullName }
-          })
-        } else {
-          // Create new auth user
-          const { data: newAuthUser, error: createAuthError } = await supabaseAdmin.auth.admin.createUser({
-            email,
-            password: `JASPEL_${employeeCode}`,
-            email_confirm: true,
-            user_metadata: { role: normalizedRole, full_name: fullName }
-          })
-          if (createAuthError) {
-            // If user exists error, skip auth creation but continue
-            if (createAuthError.message?.includes('already') || createAuthError.message?.includes('duplicate')) {
-              console.warn(`[IMPORT] Auth user ${email} already exists, skipping auth creation`)
-            } else {
-              throw createAuthError
-            }
+          if (existingAuthUser) {
+            authUserId = existingAuthUser.id
+            // Update metadata silently
+            await supabaseAdmin.auth.admin.updateUserById(authUserId, {
+              user_metadata: { role: normalizedRole, full_name: fullName }
+            })
           } else {
-            authUserId = newAuthUser?.user?.id ?? null
-            // Add to cache for subsequent rows with same email
-            if (authUserId) authUserByEmail.set(email, { id: authUserId })
+            // Create new auth user
+            const { data: newAuthUser, error: createAuthError } = await supabaseAdmin.auth.admin.createUser({
+              email,
+              password: `JASPEL_${employeeCode}`,
+              email_confirm: true,
+              user_metadata: { role: normalizedRole, full_name: fullName }
+            })
+            if (createAuthError) {
+              // If user exists error, skip auth creation but continue
+              if (createAuthError.message?.includes('already') || createAuthError.message?.includes('duplicate')) {
+                console.warn(`[IMPORT] Auth user ${email} already exists, skipping auth creation`)
+              } else {
+                throw createAuthError
+              }
+            } else {
+              authUserId = newAuthUser?.user?.id ?? null
+              // Add to cache for subsequent rows with same email
+              if (authUserId) authUserByEmail.set(email, { id: authUserId })
+            }
           }
         }
 

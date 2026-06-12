@@ -46,6 +46,7 @@ export default function UnitsPage() {
           *,
           employees:m_employees(count)
         `)
+        .neq('code', 'superadmin')
         .order('code', { ascending: true })
 
       if (unitsError) {

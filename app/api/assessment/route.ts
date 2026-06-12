@@ -153,8 +153,9 @@ async function upsertAssessment(adminClient: any, assessment: Assessment): Promi
         sub_indicator_id: sub.sub_indicator_id,
         period: assessment.period,
         realization_value: sub.realization_value || 0,
-        target_value: 0, // Not used for sub-indicators usually
+        target_value: 0,
         weight_percentage: 0,
+        score: sub.score || 0,
         notes: sub.notes || '',
         assessor_id: assessment.assessor_id
       }

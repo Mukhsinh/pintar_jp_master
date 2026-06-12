@@ -103,6 +103,7 @@ async function getAssessmentReport(supabase: any, user: any, period: string, uni
     .from('m_employees')
     .select('id, full_name, unit_id, m_units(name)')
     .eq('is_active', true)
+    .neq('role', 'superadmin')
 
   // Apply unit filtering based on role
   if (userRole === 'unit_manager') {
@@ -199,6 +200,7 @@ async function getAssessmentReport(supabase: any, user: any, period: string, uni
       *,
       m_employees!employee_id (
         full_name,
+        role,
         unit_id,
         m_units!unit_id (name)
       ),
@@ -210,6 +212,7 @@ async function getAssessmentReport(supabase: any, user: any, period: string, uni
       )
     `)
     .eq('period', period)
+    .neq('m_employees.role', 'superadmin')
 
   // Apply same unit filtering
   if (userRole === 'unit_manager') {

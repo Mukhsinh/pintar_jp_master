@@ -17,8 +17,9 @@ async function getAssessmentStatus(supabase: any, unitIdFilter: string | null, p
   // Fetch employees
   let employeeQuery = supabase
     .from('m_employees')
-    .select('id, full_name, unit_id, m_units(name)')
+    .select('id, full_name, unit_id, role, m_units(name)')
     .eq('is_active', true)
+    .neq('role', 'superadmin')
 
   if (unitIdFilter) {
     employeeQuery = employeeQuery.eq('unit_id', unitIdFilter)

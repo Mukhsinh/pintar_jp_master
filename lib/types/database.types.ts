@@ -49,7 +49,7 @@ export interface Database {
           full_name: string
           unit_id: string
           role: string
-          email: string
+          email: string | null
           tax_status: string | null
           employment_status: 'PNS' | 'PPPK' | 'PPPK PARUH WAKTU' | 'BLUD' | null
           employee_status: string | null
@@ -139,7 +139,7 @@ export interface Pegawai {
   full_name: string
   unit_id: string
   role: string
-  email: string
+  email: string | null
   tax_status: string | null
   employment_status: 'PNS' | 'PPPK' | 'PPPK PARUH WAKTU' | 'BLUD' | null
   employee_status: string | null
@@ -177,6 +177,7 @@ export interface UserWithEmployee {
 export interface CreatePegawaiData {
   employee_code: string
   full_name: string
+  email?: string | null
   unit_id: string
   position?: string | null
   phone?: string | null
