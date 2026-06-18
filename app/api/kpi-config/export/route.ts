@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import * as XLSX from 'xlsx'
 
 export async function GET(request: NextRequest) {
@@ -12,10 +12,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unit ID diperlukan' }, { status: 400 })
     }
 
+    const adminClient = await createAdminClient()
     const supabase = await createClient()
 
     // Get settings for app info
-    const { data: settingsData } = await supabase
+    const { data: settingsData } = await adminClient
       .from('t_settings')
       .select('key, value')
       .in('key', ['company_info', 'footer'])
@@ -29,9 +30,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (settingsData) {
-      const companyInfo = settingsData.find(s => s.key === 'company_info')?.value || {}
-      const footerInfo = settingsData.find(s => s.key === 'footer')?.value || {}
-      
+      const companyInfo = (settingsData.find(s => s.key === 'company_info')?.value as any) || {}
+      const footerInfo = (settingsData.find(s => s.key === 'footer')?.value as any) || {}
+
       appSettings = {
         appName: companyInfo.appName || 'JASPEL',
         developerName: companyInfo.developerName || '',
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get unit info
-    const { data: unit, error: unitError } = await supabase
+    const { data: unit, error: unitError } = await adminClient
       .from('m_units')
       .select('code, name')
       .eq('id', unitId)
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get KPI categories first
-    const { data: categories, error: categoriesError } = await supabase
+    const { data: categories, error: categoriesError } = await adminClient
       .from('m_kpi_categories')
       .select('*')
       .eq('unit_id', unitId)
@@ -67,7 +68,7 @@ export async function GET(request: NextRequest) {
     // Get indicators for each category
     const categoriesWithData = []
     for (const category of categories || []) {
-      const { data: indicators, error: indicatorsError } = await supabase
+      const { data: indicators, error: indicatorsError } = await adminClient
         .from('m_kpi_indicators')
         .select('*')
         .eq('category_id', category.id)
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
       // Get sub indicators for each indicator
       const indicatorsWithSubs = []
       for (const indicator of indicators || []) {
-        const { data: subIndicators, error: subError } = await supabase
+        const { data: subIndicators, error: subError } = await adminClient
           .from('m_kpi_sub_indicators')
           .select('*')
           .eq('indicator_id', indicator.id)
@@ -108,7 +109,7 @@ export async function GET(request: NextRequest) {
     if (format === 'excel') {
       return generateExcelReport(unit, categoriesWithData || [], appSettings)
     } else if (format === 'pdf') {
-      return NextResponse.json({ error: "PDF export sementara dinonaktifkan untuk kompatibilitas build" }, { status: 501 })
+      return generatePDFReport(unit, categoriesWithData || [], appSettings)
     } else {
       return NextResponse.json({ error: 'Format tidak didukung' }, { status: 400 })
     }
@@ -117,6 +118,142 @@ export async function GET(request: NextRequest) {
     console.error('Export error:', error)
     return NextResponse.json({ error: 'Gagal mengekspor laporan' }, { status: 500 })
   }
+}
+
+async function generatePDFReport(unit: any, categories: any[], appSettings: any) {
+  const { jsPDF } = await import('jspdf')
+  const autoTable = (await import('jspdf-autotable')).default
+
+  const doc = new jsPDF()
+
+  // Professional Kop Surat
+  doc.setFontSize(14)
+  doc.setFont('helvetica', 'bold')
+  doc.text('PEMERINTAH KABUPATEN PURBALINGGA', 105, 15, { align: 'center' })
+  doc.setFontSize(16)
+  doc.text('RSUD dr. R. GOETENG TAROENADIBRATA', 105, 22, { align: 'center' })
+  doc.setFontSize(10)
+  doc.setFont('helvetica', 'normal')
+  doc.text('Jl. Tentara Pelajar No. 08, Purbalingga, Jawa Tengah', 105, 28, { align: 'center' })
+  doc.text('Telepon: (0281) 891016 | Email: rsudgoeteng@purbalinggakab.go.id', 105, 33, { align: 'center' })
+
+  doc.setLineWidth(0.5)
+  doc.line(20, 38, 190, 38)
+  doc.setLineWidth(0.2)
+  doc.line(20, 39, 190, 39)
+
+  doc.setFontSize(14)
+  doc.setFont('helvetica', 'bold')
+  doc.text('LAPORAN KONFIGURASI KPI UNIT', 105, 50, { align: 'center' })
+  doc.setFontSize(11)
+  doc.text(`${unit.code} - ${unit.name}`, 105, 56, { align: 'center' })
+  doc.setFontSize(9)
+  doc.text(`Dicetak pada: ${new Date().toLocaleString('id-ID')}`, 105, 62, { align: 'center' })
+
+  let currentY = 70
+  let grandTotalIndicators = 0
+  let grandTotalSubIndicators = 0
+
+  categories.forEach((cat) => {
+    // Category Header
+    doc.setFontSize(12)
+    doc.setFont('helvetica', 'bold')
+    doc.text(`Kategori ${cat.category}: ${cat.category_name} (${cat.weight_percentage}%)`, 20, currentY)
+    currentY += 7
+
+    const indicators = cat.m_kpi_indicators || []
+    let totalWeightInCategory = 0
+
+    const tableBody: any[] = []
+    indicators.forEach((ind: any) => {
+      grandTotalIndicators++
+      totalWeightInCategory += Number(ind.weight_percentage)
+
+      // Main Indicator Row
+      tableBody.push([
+        { content: ind.code, styles: { fontStyle: 'bold' } },
+        { content: ind.name, styles: { fontStyle: 'bold' } },
+        { content: `${ind.weight_percentage}%`, styles: { fontStyle: 'bold' } },
+        { content: ind.target_value, styles: { fontStyle: 'bold' } },
+        { content: ind.measurement_unit || '-', styles: { fontStyle: 'bold' } }
+      ])
+
+      // Sub Indicators Rows
+      const subs = ind.m_kpi_sub_indicators || []
+      subs.forEach((sub: any) => {
+        grandTotalSubIndicators++
+        tableBody.push([
+          `  ${sub.code}`,
+          `  ${sub.name}`,
+          `${sub.weight_percentage}%`,
+          sub.target_value,
+          sub.measurement_unit || '-'
+        ])
+      })
+    })
+
+    autoTable(doc, {
+      startY: currentY,
+      head: [['Kode', 'Indikator / Sub-Indikator', 'Bobot', 'Target', 'Satuan']],
+      body: tableBody,
+      foot: [[
+        '',
+        { content: 'SUBTOTAL BOBOT INDIKATOR', styles: { halign: 'right', fontStyle: 'bold' } },
+        { content: `${totalWeightInCategory}%`, styles: { fontStyle: 'bold' } },
+        '',
+        ''
+      ]],
+      theme: 'grid',
+      headStyles: { fillColor: [52, 73, 94], textColor: 255 },
+      footStyles: { fillColor: [240, 240, 240], textColor: 0 },
+      styles: { fontSize: 8 },
+      margin: { left: 20, right: 20 },
+      didDrawPage: (data) => {
+        currentY = data.cursor?.y || currentY
+      }
+    })
+
+    currentY = (doc as any).lastAutoTable.finalY + 10
+
+    // Add page if needed
+    if (currentY > 250) {
+      doc.addPage()
+      currentY = 20
+    }
+  })
+
+  // Grand Summary at the end of PDF
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.text('RINGKASAN TOTAL:', 20, currentY)
+  currentY += 6
+  doc.setFontSize(10)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`Total Kategori: ${categories.length}`, 20, currentY)
+  currentY += 5
+  doc.text(`Total Indikator: ${grandTotalIndicators}`, 20, currentY)
+  currentY += 5
+  doc.text(`Total Sub-Indikator: ${grandTotalSubIndicators}`, 20, currentY)
+
+  // Footer
+  const pageCount = (doc as any).internal.getNumberOfPages()
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i)
+    doc.setFontSize(8)
+    doc.text(`Halaman ${i} dari ${pageCount}`, 105, 285, { align: 'center' })
+    if (appSettings.footerText) {
+      doc.text(appSettings.footerText, 105, 290, { align: 'center' })
+    }
+  }
+
+  const pdfOutput = doc.output('arraybuffer')
+
+  return new NextResponse(pdfOutput, {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="KPI_Config_${unit.code}_${new Date().toISOString().split('T')[0]}.pdf"`
+    }
+  })
 }
 
 function generateExcelReport(unit: any, categories: any[], appSettings: any) {
@@ -140,9 +277,9 @@ function generateExcelReport(unit: any, categories: any[], appSettings: any) {
 
   categories.forEach(cat => {
     const indicators = cat.m_kpi_indicators || []
-    const subIndicatorCount = indicators.reduce((sum: number, ind: any) => 
+    const subIndicatorCount = indicators.reduce((sum: number, ind: any) =>
       sum + (ind.m_kpi_sub_indicators?.length || 0), 0)
-    
+
     summaryData.push([
       `${cat.category} - ${cat.category_name}`,
       cat.weight_percentage.toString(),
@@ -157,8 +294,10 @@ function generateExcelReport(unit: any, categories: any[], appSettings: any) {
   })
 
   summaryData.push(
-    [],
-    ['TOTAL', totalCategoryWeight.toString(), totalIndicators.toString(), totalSubIndicators.toString()],
+    ['TOTAL', totalCategoryWeight.toString(), totalIndicators.toString(), totalSubIndicators.toString()]
+  )
+
+  summaryData.push(
     [],
     ['Validasi Bobot Kategori:', totalCategoryWeight === 100 ? 'VALID ✓' : `TIDAK VALID (${totalCategoryWeight}%)`],
     []
@@ -194,7 +333,7 @@ function generateExcelReport(unit: any, categories: any[], appSettings: any) {
 
     indicators.forEach((indicator: any) => {
       totalIndicatorWeight += Number(indicator.weight_percentage)
-      
+
       categoryData.push([
         'INDIKATOR:',
         indicator.code,
@@ -213,19 +352,19 @@ function generateExcelReport(unit: any, categories: any[], appSettings: any) {
       if (subIndicators.length > 0) {
         categoryData.push([])
         categoryData.push(['SUB INDIKATOR:', 'Kode', 'Nama', 'Bobot (%)', 'Target', 'Satuan', 'Kriteria Penilaian'])
-        
+
         let totalSubWeight = 0
         subIndicators.forEach((sub: any) => {
           totalSubWeight += Number(sub.weight_percentage)
-          
+
           // Handle scoring criteria
           let criteriaText = '-'
           if (sub.scoring_criteria && Array.isArray(sub.scoring_criteria)) {
-            criteriaText = sub.scoring_criteria.map((criteria: any, index: number) => 
+            criteriaText = sub.scoring_criteria.map((criteria: any, index: number) =>
               `Skor ${index + 1}: ${criteria.min_value || 0}-${criteria.max_value || 100} (${criteria.label || 'N/A'})`
             ).join('; ')
           }
-          
+
           categoryData.push([
             '',
             sub.code,
@@ -236,15 +375,14 @@ function generateExcelReport(unit: any, categories: any[], appSettings: any) {
             criteriaText
           ])
         })
-        
-        categoryData.push([])
+
         categoryData.push(['Total Bobot Sub Indikator:', `${totalSubWeight}%`, totalSubWeight === 100 ? 'VALID ✓' : 'PERLU PENYESUAIAN'])
+        categoryData.push([])
       }
-      
+
       categoryData.push([])
     })
 
-    categoryData.push([])
     categoryData.push(['VALIDASI BOBOT INDIKATOR'])
     categoryData.push(['Total Bobot Indikator:', `${totalIndicatorWeight}%`])
     categoryData.push(['Status:', totalIndicatorWeight === 100 ? 'VALID ✓' : `PERLU PENYESUAIAN (harus 100%)`])

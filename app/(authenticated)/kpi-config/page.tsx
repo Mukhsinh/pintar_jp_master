@@ -21,6 +21,7 @@ import CategoryFormDialog from '@/components/kpi/CategoryFormDialog'
 import IndicatorFormDialog from '@/components/kpi/IndicatorFormDialog'
 import SubIndicatorFormDialog from '@/components/kpi/SubIndicatorFormDialog'
 import CopyStructureDialog from '@/components/kpi/CopyStructureDialog'
+import { getUnitsForKPI, getKPIStructure } from './actions'
 import ExcelImportDialog from '@/components/kpi/ExcelImportDialog'
 import {
   DropdownMenu,
@@ -67,9 +68,13 @@ export default function KPIConfigPage() {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
+        const authRole = user.app_metadata?.role || user.user_metadata?.role
+        const isSuperAdmin = authRole === 'superadmin' || user.email === 'admin@goetengrs.com'
+        const role = isSuperAdmin ? 'superadmin' : (authRole || 'employee')
+
         setUserMetadata({
-          role: user.user_metadata?.role,
-          unit_id: user.user_metadata?.unit_id
+          role: role as any,
+          unit_id: user.user_metadata?.unit_id || user.app_metadata?.unit_id
         })
       }
     }
@@ -78,20 +83,10 @@ export default function KPIConfigPage() {
 
   const loadUnits = useCallback(async () => {
     try {
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('m_units')
-        .select('id, code, name')
-        .eq('is_active', true)
-        .order('code')
+      const result = await getUnitsForKPI()
+      if (result.error) throw new Error(result.error)
 
-      if (error) throw error
-
-      // Filter units if user is unit_manager
-      let filteredUnits = data || []
-      if (userMetadata?.role === 'unit_manager' && userMetadata.unit_id) {
-        filteredUnits = filteredUnits.filter(u => u.id === userMetadata.unit_id)
-      }
+      const filteredUnits = result.data || []
 
       setUnits(filteredUnits)
       if (filteredUnits.length > 0 && (!selectedUnit || !filteredUnits.find(u => u.id === selectedUnit))) {
@@ -103,54 +98,20 @@ export default function KPIConfigPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [selectedUnit, userMetadata])
+  }, [selectedUnit])
 
   const loadKPIStructure = useCallback(async () => {
     if (!selectedUnit) return
 
     setIsLoading(true)
     try {
-      const supabase = createClient()
-
-      // OPTIMIZED: Load all data in parallel with single query
-      const [categoriesResult, indicatorsResult, subIndicatorsResult] = await Promise.all([
-        supabase
-          .from('m_kpi_categories')
-          .select('*')
-          .eq('unit_id', selectedUnit)
-          .order('category'),
-
-        supabase
-          .from('m_kpi_indicators')
-          .select(`
-            *,
-            m_kpi_categories!m_kpi_indicators_category_id_fkey!inner (unit_id)
-          `)
-          .eq('m_kpi_categories.unit_id', selectedUnit)
-          .order('code'),
-
-        supabase
-          .from('m_kpi_sub_indicators')
-          .select(`
-            *,
-            m_kpi_indicators!m_kpi_sub_indicators_indicator_id_fkey!inner (
-              category_id,
-              m_kpi_categories!m_kpi_indicators_category_id_fkey!inner (unit_id)
-            )
-          `)
-          .eq('m_kpi_indicators.m_kpi_categories.unit_id', selectedUnit)
-          .order('code')
-      ])
-
-      // Check for errors
-      if (categoriesResult.error) throw categoriesResult.error
-      if (indicatorsResult.error) throw indicatorsResult.error
-      if (subIndicatorsResult.error) throw subIndicatorsResult.error
+      const result = await getKPIStructure(selectedUnit)
+      if (result.error) throw new Error(result.error)
 
       // Set all data at once to minimize re-renders
-      setCategories(categoriesResult.data || [])
-      setIndicators(indicatorsResult.data || [])
-      setSubIndicators(subIndicatorsResult.data || [])
+      setCategories(result.categories || [])
+      setIndicators(result.indicators || [])
+      setSubIndicators(result.subIndicators || [])
 
     } catch (error: any) {
       console.error('Error loading KPI structure:', error)
@@ -323,8 +284,9 @@ export default function KPIConfigPage() {
   }, [loadKPIStructure])
 
   const handleDownloadGuide = useCallback(() => {
-    window.open('/api/kpi-config/guide', '_blank')
-  }, [])
+    const url = selectedUnit ? `/api/kpi-config/guide?unitId=${selectedUnit}` : '/api/kpi-config/guide'
+    window.open(url, '_blank')
+  }, [selectedUnit])
 
   const handleDownloadReport = useCallback((format: 'excel' | 'pdf') => {
     if (!selectedUnit) return

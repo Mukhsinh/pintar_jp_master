@@ -133,14 +133,26 @@ export async function POST(request: NextRequest) {
     const supabase = await createAdminClient()
 
     // Get user employee info for RBAC
-    const { data: employee } = await supabase
+    let { data: employee } = await supabase
       .from('m_employees')
       .select('role, unit_id')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
+
+    const authRole = user.app_metadata?.role || user.user_metadata?.role
+    const isSuperAdmin = authRole === 'superadmin' || user.email === 'admin@goetengrs.com'
 
     if (!employee) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+      if (isSuperAdmin) {
+        employee = { role: 'superadmin', unit_id: '0' }
+      } else {
+        return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+      }
+    }
+
+    // Force role override if auth metadata says superadmin
+    if (isSuperAdmin && employee) {
+      employee.role = 'superadmin'
     }
 
     // Role-based restrictions
@@ -265,35 +277,64 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
     throw new Error('Failed to fetch employee data: ' + JSON.stringify(allEmpError))
   }
 
-  // 3. Get ALL assessments for the period (needed for total score per unit)
-  const { data: allAssessments, error: assError } = await supabase
-    .from('t_kpi_assessments')
-    .select(`
-      employee_id,
-      score,
-      weight_percentage,
-      achievement_percentage,
-      realization_value,
-      target_value,
-      m_kpi_indicators!inner (
-        name,
+  // 3. Get ALL assessments for the period (main rows + sub-assessments)
+  // We fetch both to allow fallback: if main row score is null, sum from sub-assessments
+  const [assessmentsResult, subAssessmentsResult] = await Promise.all([
+    supabase
+      .from('t_kpi_assessments')
+      .select(`
+        employee_id,
+        indicator_id,
+        score,
         weight_percentage,
-        base_index_value,
+        achievement_percentage,
+        realization_value,
         target_value,
-        calculation_method,
-        m_kpi_categories!inner (
-          category,
+        m_kpi_indicators!inner (
+          name,
           weight_percentage,
-          configuration_style,
-          is_weighted
+          base_index_value,
+          target_value,
+          calculation_method,
+          m_kpi_categories!inner (
+            category,
+            weight_percentage,
+            configuration_style,
+            is_weighted
+          )
         )
-      )
-    `)
-    .eq('period', period)
+      `)
+      .eq('period', period)
+      .is('sub_indicator_id', null),
+    supabase
+      .from('t_kpi_assessments')
+      .select('employee_id, indicator_id, score, realization_value')
+      .eq('period', period)
+      .not('sub_indicator_id', 'is', null)
+  ])
 
-  if (assError) {
-    console.error('Error fetching assessments:', assError)
+  if (assessmentsResult.error) {
+    console.error('Error fetching assessments:', assessmentsResult.error)
     throw new Error('Failed to fetch assessment data')
+  }
+
+  const allAssessments = assessmentsResult.data
+
+  // Build a lookup: employee_id+indicator_id → aggregated sub-assessment score & realization
+  // Used as fallback when main row score is null (legacy data)
+  const subScoreMap = new Map<string, { score: number; realization: number }>()
+  for (const sub of (subAssessmentsResult.data || [])) {
+    const key = `${sub.employee_id}:${sub.indicator_id}`
+    const existing = subScoreMap.get(key)
+    if (existing) {
+      existing.score += Number(sub.score || 0)
+      existing.realization += Number(sub.realization_value || 0)
+    } else {
+      subScoreMap.set(key, {
+        score: Number(sub.score || 0),
+        realization: Number(sub.realization_value || 0)
+      })
+    }
   }
 
   if (!allEmployees) return []
@@ -330,7 +371,7 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
       for (const a of catAssessments) {
         const indRealization = parseFloat(a.realization_value) || 0
         const basicVal = parseFloat(a.m_kpi_indicators?.base_index_value) || 0
-        const indicatorScore = parseFloat(a.score) || 0
+        const rawScore = a.score  // may be null for legacy rows
         const indName = a.m_kpi_indicators?.name || '-'
         const indWeight = parseFloat(a.weight_percentage) || 0
         const indTarget = parseFloat(a.target_value) || 100
@@ -340,17 +381,31 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
         const isPriority = calcMethod === 'priority'
         const isActivityIndexing = (isActivityStyle || basicVal > 0) && !isPriority
 
-        // For priority indicators: Use the pre-calculated score from the database directly. 
-        // This is critical because some priority indicators (e.g., 'Profesional Grade') store the 
-        // direct Rupiah value in realization_value (e.g., 10,000,000), NOT a volume count.
-        // If we computed realization × basic_index_value, we'd get 10M × 1M = 10 trillion (WRONG).
-        // The score field already contains the correct Rupiah amount.
-        // For activity-indexing indicators: Use volume × tarif (realization × basic_index_value).
+        // Resolve effective score: prefer main row score, fallback to sub-assessment aggregate
+        // This handles legacy rows where main row score was not synced (score = null)
+        let effectiveScore: number
+        if (rawScore !== null && rawScore !== undefined) {
+          effectiveScore = parseFloat(rawScore) || 0
+        } else {
+          const subKey = `${empId}:${a.indicator_id}`
+          const subAgg = subScoreMap.get(subKey)
+          effectiveScore = subAgg ? subAgg.score : 0
+        }
+
+        const indicatorScore = effectiveScore
+
         let activityValue = 0
-        if (isPriority) {
-          activityValue = Number(indicatorScore) || (Number(indRealization) * Number(basicVal))
-        } else if (isActivityIndexing) {
-          activityValue = Number(indRealization) * Number(basicVal)
+        if (isPriority || isActivityIndexing) {
+          if (indicatorScore > 0 && (isActivityStyle || basicVal <= 1)) {
+            // Trust saved score (direct Rupiah from scoring criteria or tariff×volume)
+            activityValue = indicatorScore
+          } else if (basicVal > 1) {
+            // Volume × tariff
+            activityValue = indRealization * basicVal
+          } else {
+            // Final fallback: use score (already resolved above) or realization
+            activityValue = indicatorScore || indRealization
+          }
         }
 
         // Track detail for slip
@@ -369,15 +424,12 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
           is_priority: isPriority
         })
 
-        // 1. Priority indicators: Deducted from pool first (Summed in totalActivityRupiah)
-        if (isPriority) {
+        // 1. Priority indicators OR Activity-based Indexing with a set Tarif (base_index_value > 0)
+        // These are treated as FIXED Rupiah values deducted from pool FIRST (P2 style and Priority style)
+        if (isPriority || isActivityIndexing) {
           totalActivityRupiah = Number(totalActivityRupiah) + Number(activityValue)
         }
-        // 2. Activity-based Indexing: Contribute to merit score as absolute values
-        else if (isActivityIndexing) {
-          totalRealisasi = Number(totalRealisasi) + Number(activityValue)
-        }
-        // 3. Standard Indexing indicators: Contribute to merit-based distribution via achievement %
+        // 2. Standard Indexing indicators: Contribute to merit-based distribution via achievement %
         else {
           if (isMedicalUnit) {
             totalRealisasi = Number(totalRealisasi) + Number(indRealization)
@@ -620,7 +672,7 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
  * Averages out achievement per indicator across all employees in the period.
  */
 async function generateKPIAchievementReport(supabase: any, period: string, unitId?: string, employeeId?: string, detailLevel?: string) {
-  // Fetch Assessment Data
+  // Fetch Assessment Data - only main indicator rows (sub_indicator_id IS NULL)
   let query = supabase
     .from('t_kpi_assessments')
     .select(`
@@ -651,6 +703,7 @@ async function generateKPIAchievementReport(supabase: any, period: string, unitI
       )
     `)
     .eq('period', period)
+    .is('sub_indicator_id', null)  // Exclude sub-indicator rows to prevent duplicate counting
 
   if (unitId || employeeId) {
     // If employeeId is specified, we prioritize it as it is more specific.
@@ -707,6 +760,7 @@ async function generateKPIAchievementReport(supabase: any, period: string, unitI
       existing.count++
       existing.sum_realization += Number(row.realization_value || 0)
       existing.sum_target_value += Number(row.target_value || row.m_kpi_indicators.target_value || 0)
+      existing.sum_score += Number(row.score || 0)
     } else {
       mergedData.set(key, {
         category: row.m_kpi_indicators.m_kpi_categories?.category || '-',
@@ -716,9 +770,11 @@ async function generateKPIAchievementReport(supabase: any, period: string, unitI
         unit_name: unitName,
         is_activity: isActivity,
         is_weighted: isWeightedCat && !isActivity,
+        base_index_value: basicVal,
         count: 1,
         sum_realization: Number(row.realization_value || 0),
         sum_target_value: Number(row.target_value || row.m_kpi_indicators.target_value || 0),
+        sum_score: Number(row.score || 0),
       })
     }
   })
@@ -727,11 +783,15 @@ async function generateKPIAchievementReport(supabase: any, period: string, unitI
   const reportArray = Array.from(mergedData.values()).map(item => {
     const realization = Number((item.sum_realization / item.count).toFixed(2));
     const target = Number((item.sum_target_value / item.count).toFixed(2));
-    const achievement_percentage = target > 0 ? (realization / target) * 100 : 0;
+    const avgScore = Number((item.sum_score / item.count).toFixed(2));
+
+    // Unify achievement logic with generateIncentiveReport: Target 0 means 100% achievement
+    const achievement_percentage = target === 0 ? 100 : (realization / target) * 100;
 
     let score = 0;
     if (item.is_activity) {
-      score = realization // For priority/activity, score is basically the volume in this report context
+      // Unify with incentive logic: value = score || (realization * base)
+      score = avgScore || (realization * (item.base_index_value || 0));
     } else if (item.is_weighted) {
       score = (achievement_percentage / 100) * item.weight;
     } else {

@@ -48,14 +48,35 @@ export async function DashboardContent({
         )
       `)
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
 
-    const { data: employee, error } = employeeResult
+    let { data: employee, error } = employeeResult
+
+    const authRole = user.app_metadata?.role || user.user_metadata?.role
+    const isSuperAdmin = authRole === 'superadmin' || user.email === 'admin@goetengrs.com'
 
     if (error || !employee) {
-      console.error('Employee fetch error:', error)
-      redirect('/login?error=user_not_found')
+      if (isSuperAdmin) {
+        employee = {
+          id: user.id,
+          full_name: user.user_metadata?.full_name || 'Super Administrator',
+          role: 'superadmin',
+          unit_id: '0', // No specific unit
+          m_units: { name: 'Sistem Administrator' } as any
+        } as any
+      } else {
+        console.error('Employee fetch error:', error)
+        redirect('/login?error=user_not_found')
+      }
     }
+
+    // Force role override if auth metadata says superadmin
+    if (isSuperAdmin && employee) {
+      employee.role = 'superadmin'
+      if (!employee.full_name) employee.full_name = 'Super Administrator'
+    }
+
+    if (!employee) return null // Type guard for TS
 
     // Handle m_units yang bisa berupa object atau array
     const unitData = employee.m_units as any
@@ -130,7 +151,7 @@ export async function DashboardContent({
       <div className="w-full bg-gradient-to-br from-gray-50 via-white to-gray-50 min-h-screen">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8 space-y-6">
           <div className="space-y-2">
-            <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tight">Dashboard</h1>
+            <h1 className="text-3xl md:text-4xl font-semibold text-gray-900 tracking-tight">Dashboard</h1>
             <p className="text-base md:text-lg text-gray-600 font-medium">
               Selamat datang, <span className="text-blue-600 font-bold">{employee.full_name}</span> • {unitName}
             </p>

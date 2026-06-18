@@ -149,16 +149,12 @@ export default function AssessmentTable({
                       <div className="font-medium text-gray-900">
                         {employee.full_name}
                       </div>
-                      <div className="text-sm text-gray-500">
-                        ID: {employee.employee_id.slice(-8)}
-                      </div>
                     </div>
                   </div>
                 </TableCell>
                 <TableCell>
                   <div className="text-sm">
                     <div className="font-medium">{employee.unit_name}</div>
-                    <div className="text-gray-500">Unit Kerja</div>
                   </div>
                 </TableCell>
                 <TableCell>

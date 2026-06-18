@@ -16,21 +16,34 @@ export async function GET(request: NextRequest) {
         const supabase = await createAdminClient()
 
         // Get user employee info
-        const { data: employee } = await supabase
+        let { data: employee } = await supabase
             .from('m_employees')
             .select('id, role, unit_id')
             .eq('user_id', user.id)
-            .single()
+            .maybeSingle()
+
+        const authRole = user.app_metadata?.role || user.user_metadata?.role
+        const isSuperAdmin = authRole === 'superadmin' || user.email === 'admin@goetengrs.com'
 
         if (!employee) {
-            return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+            if (isSuperAdmin) {
+                employee = { id: user.id, role: 'superadmin', unit_id: '0' }
+            } else {
+                return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+            }
+        }
+
+        // Force role override if auth metadata says superadmin
+        if (isSuperAdmin && employee) {
+            employee.role = 'superadmin'
         }
 
         if (type === 'units') {
             let query = supabase
                 .from('m_units')
-                .select('id, name')
+                .select('id, name, code')
                 .eq('is_active', true)
+                .neq('code', 'superadmin')
                 .order('name')
 
             if (employee.role === 'unit_manager') {
@@ -46,8 +59,9 @@ export async function GET(request: NextRequest) {
         if (type === 'employees') {
             let query = supabase
                 .from('m_employees')
-                .select('id, full_name, unit_id, employee_code')
+                .select('id, full_name, unit_id, employee_code, role')
                 .eq('is_active', true)
+                .neq('role', 'superadmin')
                 .order('full_name')
 
             if (employee.role === 'unit_manager') {

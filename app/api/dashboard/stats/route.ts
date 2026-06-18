@@ -16,14 +16,26 @@ export async function GET(request: Request) {
     }
 
     // Get employee data
-    const { data: employee } = await supabase
+    let { data: employee } = await supabase
       .from('m_employees')
       .select('id, role, unit_id')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
+
+    const authRole = user.app_metadata?.role || user.user_metadata?.role
+    const isSuperAdmin = authRole === 'superadmin' || user.email === 'admin@goetengrs.com'
 
     if (!employee) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+      if (isSuperAdmin) {
+        employee = { role: 'superadmin', unit_id: '0' } as any
+      } else {
+        return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+      }
+    }
+
+    // Force role override if auth metadata says superadmin
+    if (isSuperAdmin && employee) {
+      employee.role = 'superadmin'
     }
 
     const stats: any = {}

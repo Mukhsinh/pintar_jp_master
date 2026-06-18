@@ -45,15 +45,32 @@ export default async function AssessmentPage() {
     }
 
     // Get current user's employee record with error handling
-    const { data: currentEmployee, error: employeeError } = await supabase
+    let { data: currentEmployee, error: employeeError } = await supabase
       .from('m_employees')
       .select('id, role, unit_id, full_name')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
+
+    const authRole = user.app_metadata?.role || user.user_metadata?.role
+    const isSuperAdmin = authRole === 'superadmin' || user.email === 'admin@goetengrs.com'
 
     if (employeeError || !currentEmployee) {
-      console.error('Employee lookup error:', employeeError)
-      redirect('/forbidden')
+      if (isSuperAdmin) {
+        currentEmployee = {
+          id: user.id,
+          full_name: user.user_metadata?.full_name || 'Super Administrator',
+          role: 'superadmin',
+          unit_id: '0'
+        }
+      } else {
+        console.error('Employee lookup error:', employeeError)
+        redirect('/forbidden')
+      }
+    }
+
+    // Force role override if auth metadata says superadmin
+    if (isSuperAdmin && currentEmployee) {
+      currentEmployee.role = 'superadmin'
     }
 
     // Check if user has assessment permissions

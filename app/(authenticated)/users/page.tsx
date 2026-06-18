@@ -1,14 +1,14 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { getUsers, type UserWithPegawai } from './actions'
-import { Plus, Search, RefreshCw } from 'lucide-react'
+import { Plus, Search, RefreshCw, Users as UsersIcon, Filter, ChevronLeft, ChevronRight, Download, Upload } from 'lucide-react'
 import { UserTable } from '@/components/users/UserTable'
 import { UserFormDialog } from '@/components/users/UserFormDialog'
+import { cn } from '@/lib/utils'
 
 // Debounce hook for search optimization
 function useDebounce<T>(value: T, delay: number): T {
@@ -37,7 +37,7 @@ export default function UsersPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [selectedUser, setSelectedUser] = useState<UserWithPegawai | null>(null)
 
-  const pageSize = 50
+  const pageSize = 15 // Smaller page size for better performance and UI fit
   const totalPages = Math.ceil(totalCount / pageSize)
 
   // Debounce search term to reduce API calls
@@ -81,7 +81,7 @@ export default function UsersPage() {
 
   const handleDelete = useCallback(async (user: UserWithPegawai) => {
     const userName = user.pegawai?.full_name || user.email
-    if (!confirm(`PERINGATAN: Apakah Anda yakin ingin menghapus pengguna ${userName}?\n\nTindakan ini akan menghapus:\n- Akun pengguna\n- Data pegawai terkait\n- Semua data KPI dan realisasi\n\nTindakan ini TIDAK DAPAT DIBATALKAN!`)) {
+    if (!confirm(`PERINGATAN: Apakah Anda yakin ingin menghapus pengguna ${userName}?\n\nTindakan ini akan menghapus akun jaspel pengguna.\n\nTindakan ini TIDAK DAPAT DIBATALKAN!`)) {
       return
     }
 
@@ -107,126 +107,141 @@ export default function UsersPage() {
     setLoading(false)
   }, [loadUsers])
 
-  const handleDownloadTemplate = () => {
-    window.open('/api/users/template', '_blank')
-  }
-
-  const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    const formData = new FormData()
-    formData.append('file', file)
-
-    try {
-      const response = await fetch('/api/users/import', {
-        method: 'POST',
-        body: formData,
-      })
-
-      const result = await response.json()
-
-      if (response.ok) {
-        alert(`Import berhasil!\nBerhasil: ${result.success}\nGagal: ${result.failed}${result.errors.length > 0 ? '\n\nError:\n' + result.errors.slice(0, 5).join('\n') + (result.errors.length > 5 ? '\n... dan lainnya' : '') : ''}`)
-        loadUsers()
-      } else {
-        alert(`Import gagal: ${result.error}`)
-      }
-    } catch (error) {
-      console.error('Import error:', error)
-      alert('Terjadi kesalahan saat import')
-    }
-
-    event.target.value = ''
-  }
-
   const handleDownloadReport = (format: 'excel' | 'pdf') => {
     window.open(`/api/users/export?format=${format}`, '_blank')
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Manajemen Pengguna</h1>
-          <p className="text-gray-500">Kelola pengguna sistem dan peran mereka</p>
+    <div className="p-4 sm:p-8 space-y-8 max-w-[1600px] mx-auto animate-in fade-in duration-700">
+
+      {/* Premium Header */}
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+        <div className="space-y-1">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-[1.25rem] bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-200">
+              <UsersIcon className="text-white h-6 w-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-800 tracking-tight leading-none">Otoritas Pengguna</h1>
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1.5">Manajemen Akses &amp; Role Sistem</p>
+            </div>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={loadUsers} disabled={loading}>
-            <RefreshCw className={`h-5 w-5 mr-2 ${loading ? 'animate-spin' : ''}`} />
+
+        <div className="flex flex-wrap gap-3 w-full lg:w-auto">
+          <Button
+            variant="outline"
+            onClick={loadUsers}
+            disabled={loading}
+            className="h-9 px-4 rounded-xl text-sm font-medium text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-700 transition-all flex-1 lg:flex-none"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5 mr-1.5", loading && "animate-spin")} />
             Muat Ulang
           </Button>
-          <Button onClick={() => setShowCreateDialog(true)}>
-            <Plus className="h-5 w-5 mr-2" />
+          <Button
+            onClick={() => setShowCreateDialog(true)}
+            className="h-9 px-4 premium-gradient text-white rounded-xl font-bold uppercase tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all flex-1 lg:flex-none text-[11px]"
+          >
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
             Tambah Pengguna
           </Button>
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Daftar Pengguna</CardTitle>
-          <CardDescription>
-            Total: {totalCount} pengguna
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col md:flex-row gap-4 mb-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Cari berdasarkan nama, email, unit, atau peran..."
-                value={searchTerm}
-                onChange={(e) => handleSearch(e.target.value)}
-                className="pl-10 h-10 shadow-sm"
-              />
-            </div>
-            <div className="w-full md:w-48">
-              <Select value={roleFilter} onValueChange={setRoleFilter}>
-                <SelectTrigger className="h-10 shadow-sm">
-                  <SelectValue placeholder="Semua Peran" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Seluruh Pegawai</SelectItem>
-                  <SelectItem value="superadmin">Superadmin</SelectItem>
-                  <SelectItem value="unit_manager">Manajer Unit</SelectItem>
-                  <SelectItem value="employee">Pegawai</SelectItem>
-                </SelectContent>
-              </Select>
+      {/* Control Bar */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+        <div className="md:col-span-8 relative group">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-300 group-focus-within:text-blue-500 transition-all font-black" />
+          <Input
+            placeholder="Cari Nama, NIP, atau Email..."
+            value={searchTerm}
+            onChange={(e) => handleSearch(e.target.value)}
+            className="h-14 pl-12 bg-white/70 backdrop-blur-md border-slate-200 rounded-[1.25rem] text-sm font-bold text-slate-700 shadow-sm focus:ring-4 focus:ring-blue-100 placeholder:text-slate-300 transition-all"
+          />
+        </div>
+        <div className="md:col-span-4">
+          <Select value={roleFilter} onValueChange={(val) => { setRoleFilter(val); setCurrentPage(1); }}>
+            <SelectTrigger className="h-14 bg-white/70 backdrop-blur-md border-slate-200 rounded-[1.25rem] text-xs font-black uppercase tracking-widest text-slate-500 shadow-sm focus:ring-4 focus:ring-blue-100 px-6 px-12">
+              <div className="flex items-center gap-3">
+                <Filter size={16} className="text-slate-300 shrink-0" />
+                <SelectValue placeholder="Semua Peran" />
+              </div>
+            </SelectTrigger>
+            <SelectContent className="rounded-2xl border-slate-100 p-2 shadow-2xl">
+              <SelectItem value="all" className="rounded-xl font-bold text-xs uppercase tracking-widest py-3">Semua Pegawai</SelectItem>
+              <SelectItem value="superadmin" className="rounded-xl font-bold text-xs uppercase tracking-widest py-3">Superadmin</SelectItem>
+              <SelectItem value="unit_manager" className="rounded-xl font-bold text-xs uppercase tracking-widest py-3">Manajer Unit</SelectItem>
+              <SelectItem value="employee" className="rounded-xl font-bold text-xs uppercase tracking-widest py-3">Pegawai</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Table Section */}
+      <div className="space-y-4">
+        <UserTable
+          users={users}
+          loading={loading}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onRefresh={loadUsers}
+        />
+
+        {/* Premium Pagination */}
+        {totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-2">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              Menampilkan {users.length} dari {totalCount} Pengguna
+            </p>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1 || loading}
+                className="h-10 w-10 p-0 rounded-xl hover:bg-white hover:shadow-md disabled:opacity-30"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </Button>
+
+              <div className="flex items-center gap-1">
+                {[...Array(totalPages)].map((_, i) => {
+                  const page = i + 1
+                  // Show limited pages if many
+                  if (totalPages > 5 && Math.abs(page - currentPage) > 2 && page !== 1 && page !== totalPages) {
+                    if (Math.abs(page - currentPage) === 3) return <span key={page} className="px-1 text-slate-300">...</span>
+                    return null
+                  }
+                  return (
+                    <Button
+                      key={page}
+                      variant={currentPage === page ? 'default' : 'ghost'}
+                      onClick={() => setCurrentPage(page)}
+                      className={cn(
+                        "h-10 w-10 p-0 rounded-xl font-black text-xs transition-all",
+                        currentPage === page
+                          ? "bg-blue-600 text-white shadow-lg shadow-blue-200"
+                          : "text-slate-400 hover:bg-white hover:shadow-md"
+                      )}
+                    >
+                      {page}
+                    </Button>
+                  )
+                })}
+              </div>
+
+              <Button
+                variant="ghost"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages || loading}
+                className="h-10 w-10 p-0 rounded-xl hover:bg-white hover:shadow-md disabled:opacity-30"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </Button>
             </div>
           </div>
-
-          <UserTable
-            users={users}
-            loading={loading}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-            onRefresh={loadUsers}
-          />
-
-          {totalPages > 1 && (
-            <div className="flex justify-center gap-2 mt-4">
-              <Button
-                variant="outline"
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-              >
-                Sebelumnya
-              </Button>
-              <span className="flex items-center px-4">
-                Halaman {currentPage} dari {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-              >
-                Selanjutnya
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        )}
+      </div>
 
       <UserFormDialog
         open={showCreateDialog}

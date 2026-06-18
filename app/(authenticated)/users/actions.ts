@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 
 export interface UserWithPegawai {
   id: string
@@ -24,8 +24,10 @@ export interface UserWithPegawai {
   } | null
 }
 
+const SUPERADMIN_EMAIL = 'admin@goetengrs.com'
+
 /**
- * Server action to get users from t_user table
+ * Server action to get users from m_employees joined with auth
  */
 export async function getUsers(
   page: number = 1,
@@ -36,20 +38,23 @@ export async function getUsers(
   try {
     const supabase = await createClient()
 
-    // Verify user is authenticated
     const { data: { user: authUser } } = await supabase.auth.getUser()
     if (!authUser) {
       return { data: [], count: 0, error: 'Tidak terautentikasi' }
     }
 
-    // Check if user is superadmin from user metadata
-    const userRole = authUser.user_metadata?.role
-    if (userRole !== 'superadmin') {
-      return { data: [], count: 0, error: 'Tidak memiliki akses' }
-    }
+    const email = authUser.email
+    const isSuperAdmin = (
+      authUser.app_metadata?.role === 'superadmin' ||
+      authUser.user_metadata?.role === 'superadmin' ||
+      email === SUPERADMIN_EMAIL
+    )
 
-    // Get all employees with user_id
-    let query = supabase
+    const adminClient = await createAdminClient()
+    const effectiveClient = isSuperAdmin ? adminClient : supabase
+
+    // Get employees with user_id
+    let query = effectiveClient
       .from('m_employees')
       .select(`
         id,
@@ -59,6 +64,7 @@ export async function getUsers(
         tax_status,
         is_active,
         user_id,
+        role,
         created_at,
         updated_at,
         m_units(id, name)
@@ -66,17 +72,14 @@ export async function getUsers(
       .not('user_id', 'is', null)
       .order('created_at', { ascending: false })
 
-    // Apply search filter
     if (searchTerm) {
       query = query.or(`full_name.ilike.%${searchTerm}%,employee_code.ilike.%${searchTerm}%`)
     }
 
-    // Apply role filter
     if (roleFilter !== 'all') {
       query = query.eq('role', roleFilter)
     }
 
-    // Apply pagination
     const from = (page - 1) * pageSize
     const to = from + pageSize - 1
     query = query.range(from, to)
@@ -87,41 +90,33 @@ export async function getUsers(
       return { data: [], count: 0, error: error.message }
     }
 
-    // Get auth users to get email and role using service role
-    const { createClient: createServiceClient } = await import('@supabase/supabase-js')
-    const adminClient = createServiceClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        },
-        global: {
-          headers: {
-            Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
-          }
-        }
-      }
-    )
-    const { data: authUsersData, error: authError } = await adminClient.auth.admin.listUsers()
+    // Get ALL auth users to ensure we find everyone (paginate if needed, but for now 1000 is likely enough)
+    const { data: authUsersData, error: authError } = await adminClient.auth.admin.listUsers({
+      perPage: 1000
+    })
 
     if (authError) {
       console.error('Error fetching auth users:', authError)
       return { data: [], count: 0, error: authError.message }
     }
 
-    const authUsers = authUsersData
+    const authUsers = authUsersData.users
 
-    // Transform data to match UserWithPegawai type
     const transformedData: UserWithPegawai[] = (data || []).map((employee: any) => {
-      const authUser = authUsers.users.find(u => u.id === employee.user_id)
+      const authUser = authUsers.find((u: any) => u.id === employee.user_id)
       const unit = Array.isArray(employee.m_units) ? employee.m_units[0] : employee.m_units
+      const email = authUser?.email || ''
+
+      // Robust role detection
+      let detectedRole = authUser?.user_metadata?.role || authUser?.app_metadata?.role || employee.role || 'employee'
+      if (email === SUPERADMIN_EMAIL) {
+        detectedRole = 'superadmin'
+      }
 
       return {
         id: employee.user_id,
-        email: authUser?.email || '',
-        role: authUser?.user_metadata?.role || 'employee',
+        email: email,
+        role: detectedRole as any,
         employee_id: employee.id,
         is_active: employee.is_active,
         created_at: employee.created_at,
@@ -142,5 +137,41 @@ export async function getUsers(
   } catch (err: any) {
     console.error('getUsers error:', err)
     return { data: [], count: 0, error: err.message }
+  }
+}
+
+/**
+ * Server action to get employees for user creation dropdown
+ * Fetches employees who DON'T have a user_id yet
+ */
+export async function getEmployeesForUserCreation(): Promise<{ data: any[]; error?: string }> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { data: [], error: 'Tidak terautentikasi' }
+
+    const isSuperAdmin = (
+      user.app_metadata?.role === 'superadmin' ||
+      user.user_metadata?.role === 'superadmin' ||
+      user.email === SUPERADMIN_EMAIL
+    )
+
+    if (!isSuperAdmin) {
+      return { data: [], error: 'Tidak memiliki akses' }
+    }
+
+    const adminSupabase = await createAdminClient()
+    // Modified: Also allow fetching ALL if needed, but primarily those WITHOUT user_id
+    const { data, error } = await adminSupabase
+      .from('m_employees')
+      .select('id, employee_code, full_name, unit_id, role, user_id')
+      .eq('is_active', true)
+      .order('full_name')
+
+    if (error) return { data: [], error: error.message }
+    return { data: data || [] }
+  } catch (err: any) {
+    console.error('getEmployeesForUserCreation error:', err)
+    return { data: [], error: err.message || 'Terjadi kesalahan' }
   }
 }

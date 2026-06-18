@@ -2,13 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { createClient } from '@/lib/supabase/client'
-import { Loader2, RefreshCw, MessageCircle, Eye, EyeOff, Mail, Lock } from 'lucide-react'
+import { Loader2, Eye, EyeOff, Mail, Lock, MessageCircle } from 'lucide-react'
 import Image from 'next/image'
-import { Footer } from '@/components/layout/Footer'
 
 function getErrorMessage(code: string | null): string | null {
   if (!code) return null
@@ -27,14 +23,15 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showClear, setShowClear] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
   const searchParams = useSearchParams()
 
   useEffect(() => {
+    setIsMounted(true)
     const code = searchParams.get('error')
     if (code) setError(getErrorMessage(code))
     clearOldSession()
-  }, [searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   const clearOldSession = () => {
     try {
@@ -46,17 +43,6 @@ export default function LoginPage() {
     } catch { /* ignore */ }
   }
 
-  const handleClearStorage = () => {
-    try {
-      localStorage.clear()
-      sessionStorage.clear()
-      document.cookie.split(';').forEach(c => {
-        document.cookie = `${c.split('=')[0].trim()}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
-      })
-      window.location.reload()
-    } catch { /* ignore */ }
-  }
-
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (isLoading) return
@@ -65,11 +51,8 @@ export default function LoginPage() {
 
     try {
       const supabase = createClient()
-
-      // Clear any existing session to ensure clean login
       await supabase.auth.signOut({ scope: 'local' })
 
-      // Perform sign in
       const { data: auth, error: authErr } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password,
@@ -77,7 +60,6 @@ export default function LoginPage() {
 
       if (authErr) {
         setError(authErr.message || 'Email atau kata sandi salah')
-        setShowClear(true)
         setIsLoading(false)
         return
       }
@@ -88,151 +70,146 @@ export default function LoginPage() {
         return
       }
 
-      // Sync role and wait for it
       try {
-        const syncResponse = await fetch('/api/users/sync-role', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        })
-        if (!syncResponse.ok) {
-          console.warn('[LOGIN] Sync role returned status:', syncResponse.status)
-        }
+        await fetch('/api/users/sync-role', { method: 'POST' })
       } catch (syncErr) {
         console.error('[LOGIN] Sync role failed:', syncErr)
       }
 
-      // Small delay to ensure cookies are processed by the browser
-      // and available for the middleware in the next request
-      await new Promise(resolve => setTimeout(resolve, 500))
-
-      // Use replace instead of href to prevent back-button issues
+      await new Promise(resolve => setTimeout(resolve, 800))
       window.location.replace('/dashboard')
     } catch (err: any) {
       console.error('[LOGIN] Unexpected error:', err)
       setError('Terjadi kesalahan sistem: ' + (err.message || 'Silakan coba lagi'))
-      setShowClear(true)
       setIsLoading(false)
     }
   }
 
   const waUrl = `https://wa.me/6285726112001?text=${encodeURIComponent('Halo, saya memerlukan bantuan untuk mengakses aplikasi JASPEL. Mohon bantuannya.')}`
 
+  if (!isMounted) return null
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-white to-blue-50/50 px-4 py-10 font-sans">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50/50 p-6 font-sans">
 
-      {/* Card */}
-      <div className="w-full max-w-sm">
-
-        {/* Logo & Nama Rumah Sakit */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-24 h-24 rounded-full bg-white shadow-md border border-slate-100 flex items-center justify-center mb-4 overflow-hidden">
-            <Image
-              src="/Logo rsud goeteng.jpeg"
-              alt="Logo RSUD Goeteng"
-              width={88}
-              height={88}
-              className="object-contain"
-              priority
-            />
-          </div>
-          <h1 className="text-2xl font-black text-slate-800 tracking-tight text-center leading-tight">
-            RSUD GOETENG
-          </h1>
-          <p className="text-xs text-slate-400 font-semibold tracking-widest uppercase mt-1">
-            Taroenadibrata Purbalingga
-          </p>
-          <div className="w-12 h-[2px] bg-blue-200 rounded-full mt-3" />
+      {/* Header Section */}
+      <div className="flex flex-col items-center mb-8">
+        <div className="w-24 h-24 bg-white rounded-full shadow-lg flex items-center justify-center overflow-hidden mb-4 border border-gray-100">
+          <Image
+            src="/Logo rsud goeteng.jpeg"
+            alt="Logo RSUD Goeteng"
+            width={75}
+            height={75}
+            className="object-contain"
+            priority
+          />
         </div>
+        <h1 className="text-2xl font-extrabold text-gray-800 tracking-tight text-center m-0 uppercase">
+          RSUD Goeteng
+        </h1>
+        <p className="text-[11px] text-gray-400 font-bold tracking-[0.2em] uppercase mt-1 text-center">
+          Taroenadibrata Purbalingga
+        </p>
+        <div className="flex items-center gap-1 mt-3">
+          <div className="w-10 h-1 bg-blue-500 rounded-full" />
+          <div className="w-4 h-1 bg-blue-300 rounded-full" />
+          <div className="w-2 h-1 bg-blue-100 rounded-full" />
+        </div>
+      </div>
 
-        {/* Form Card */}
-        <div className="bg-white rounded-3xl shadow-[0_8px_40px_rgba(0,0,0,0.07)] border border-slate-100 p-8">
-          <p className="text-sm font-bold text-slate-500 uppercase tracking-widest mb-6 text-center">
-            Masuk ke Sistem
-          </p>
+      {/* Login Card */}
+      <div className="w-full max-w-[400px] bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 p-8 md:p-10">
+        <h2 className="text-center text-xs font-black text-blue-600 uppercase tracking-[0.2em] mb-8">
+          Masuk ke Sistem
+        </h2>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-
-            <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-xs font-bold text-slate-500 uppercase tracking-wider">Email</Label>
-              <div className="relative group">
-                <Mail size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors pointer-events-none" />
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="nama@email.com"
-                  required
-                  className="h-11 bg-slate-50 border-slate-200 focus:border-blue-400 focus:bg-white focus:ring-0 rounded-xl pl-10 text-sm font-medium text-slate-800 shadow-none transition-all"
-                />
-              </div>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Email Field */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1">
+              Email
+            </label>
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" size={16} />
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="nama@email.com"
+                required
+                className="w-full h-12 pl-12 pr-4 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium transition-all focus:outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50/50"
+              />
             </div>
+          </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="password" className="text-xs font-bold text-slate-500 uppercase tracking-wider">Kata Sandi</Label>
-              <div className="relative group">
-                <Lock size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors pointer-events-none" />
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  className="h-11 bg-slate-50 border-slate-200 focus:border-blue-400 focus:bg-white focus:ring-0 rounded-xl pl-10 pr-11 text-sm font-medium text-slate-800 shadow-none transition-all"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 transition-colors"
-                >
-                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
-            </div>
-
-            {error && (
-              <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 font-semibold">
-                {error}
-              </div>
-            )}
-
-            <Button
-              type="submit"
-              disabled={isLoading}
-              className="w-full h-11 bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 active:scale-[0.98] transition-all text-sm border-0 mt-1"
-            >
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Masuk'}
-            </Button>
-
-            {showClear && (
+          {/* Password Field */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1">
+              Kata Sandi
+            </label>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300 pointer-events-none" size={16} />
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="w-full h-12 pl-12 pr-12 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium transition-all focus:outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50/50"
+              />
               <button
                 type="button"
-                onClick={handleClearStorage}
-                className="w-full text-[11px] font-bold text-slate-300 hover:text-red-400 transition-all flex items-center justify-center gap-1.5"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-gray-300 hover:text-gray-500 transition-colors"
               >
-                <RefreshCw size={10} /> Reset Sesi &amp; Muat Ulang
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
-            )}
-          </form>
-
-          <div className="mt-5 pt-5 border-t border-slate-100">
-            <a
-              href={waUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 text-emerald-700 font-bold text-xs hover:bg-emerald-100 transition-all border border-emerald-100"
-            >
-              <MessageCircle className="h-3.5 w-3.5" /> Hubungi Bantuan Admin
-            </a>
+            </div>
           </div>
-        </div>
 
-        {/* Footer */}
-        <Footer className="text-center text-[11px] text-slate-600 font-medium mt-6 leading-relaxed bg-transparent border-0" />
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 font-semibold animate-in fade-in duration-300">
+              {error}
+            </div>
+          )}
+
+          {/* Login Button */}
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full h-12 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold rounded-xl text-sm shadow-lg shadow-blue-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                <span>Memproses...</span>
+              </>
+            ) : (
+              <span>Masuk</span>
+            )}
+          </button>
+        </form>
+
+        {/* Support Section */}
+        <div className="mt-8 pt-6 border-t border-gray-50">
+          <a
+            href={waUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full h-12 bg-[#f0fdf4] border border-[#bbf7d0] rounded-xl text-[#16a34a] text-xs font-bold hover:bg-[#dcfce7] transition-all"
+          >
+            <MessageCircle size={16} />
+            Hubungi Bantuan Admin
+          </a>
+        </div>
       </div>
+
+      {/* Footer */}
+      <footer className="mt-10 text-center">
+        <p className="text-[10px] text-gray-400 font-semibold tracking-wider">
+          PINTAR JP © 2026, Mukhsin Hadi. All Right Reserved
+        </p>
+      </footer>
     </div>
   )
 }

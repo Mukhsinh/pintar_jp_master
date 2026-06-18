@@ -14,9 +14,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Tidak terautentikasi' }, { status: 401 })
     }
 
-    // Check if user is superadmin from user metadata
+    // Check if user is superadmin from metadata or email
+    const appRole = authUser.app_metadata?.role
     const userRole = authUser.user_metadata?.role
-    if (userRole !== 'superadmin') {
+    const isSuperAdmin =
+      appRole === 'superadmin' ||
+      userRole === 'superadmin' ||
+      authUser.email?.toLowerCase() === 'admin@goetengrs.com'
+
+    if (!isSuperAdmin) {
       return NextResponse.json({ success: false, error: 'Tidak memiliki akses' }, { status: 403 })
     }
 

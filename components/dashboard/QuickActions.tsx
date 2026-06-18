@@ -58,9 +58,9 @@ export function QuickActions({ role }: QuickActionsProps) {
           {actions.map((action) => {
             const Icon = action.icon
             return (
-              <Link key={action.href} href={action.href}>
-                <Button 
-                  variant="outline" 
+              <Link key={action.title} href={action.href}>
+                <Button
+                  variant="outline"
                   className="w-full h-auto flex flex-col items-center gap-2 p-4 hover:bg-blue-50 hover:border-blue-300"
                 >
                   <Icon className="h-6 w-6 text-blue-600" />

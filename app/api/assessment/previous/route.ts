@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 
 export async function GET(request: NextRequest) {
     try {
@@ -11,6 +11,19 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
+        const adminClient = await createAdminClient()
+
+        // Get current user's employee record
+        const { data: currentEmployee } = await adminClient
+            .from('m_employees')
+            .select('id, role, unit_id')
+            .eq('user_id', user.id)
+            .maybeSingle()
+
+        if (!currentEmployee) {
+            return NextResponse.json({ error: 'Employee record not found' }, { status: 404 })
+        }
+
         const { searchParams } = new URL(request.url)
         const employeeId = searchParams.get('employee_id')
         const currentPeriod = searchParams.get('current_period')
@@ -20,6 +33,22 @@ export async function GET(request: NextRequest) {
                 { error: 'employee_id and current_period are required' },
                 { status: 400 }
             )
+        }
+
+        // Enforce unit isolation for unit managers
+        if (currentEmployee.role === 'unit_manager') {
+            const { data: targetEmployee } = await adminClient
+                .from('m_employees')
+                .select('unit_id')
+                .eq('id', employeeId)
+                .single()
+
+            if (!targetEmployee || targetEmployee.unit_id !== currentEmployee.unit_id) {
+                return NextResponse.json(
+                    { error: 'You can only view assessments for employees in your unit' },
+                    { status: 403 }
+                )
+            }
         }
 
         // Since `period` looks like 'Februari 2026', matching string order might not represent time correctly.

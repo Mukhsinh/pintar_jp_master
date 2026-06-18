@@ -55,8 +55,27 @@ export async function GET(request: NextRequest) {
     }
 
     if (!currentEmployee) {
-      console.error('No employee record found for user:', user.id, user.email)
-      return NextResponse.json({ error: 'Employee record not found' }, { status: 404 })
+      // Fallback for superadmin without m_employees record
+      const appRole = user.app_metadata?.role
+      const userRole = user.user_metadata?.role
+      const email = user.email
+
+      const isSuperAdmin =
+        appRole === 'superadmin' ||
+        userRole === 'superadmin' ||
+        email === 'admin@goetengrs.com'
+
+      if (isSuperAdmin) {
+        currentEmployee = {
+          id: user.id,
+          full_name: 'Super Administrator',
+          role: 'superadmin',
+          unit_id: '0'
+        }
+      } else {
+        console.error('No employee record found for user:', user.id, user.email)
+        return NextResponse.json({ error: 'Employee record not found' }, { status: 404 })
+      }
     }
 
     console.log('Current employee:', currentEmployee.full_name, 'Role:', currentEmployee.role)

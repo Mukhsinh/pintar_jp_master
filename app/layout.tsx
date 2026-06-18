@@ -1,8 +1,13 @@
-import type { Metadata } from "next";
+import { Outfit } from "next/font/google";
 import "./globals.css";
 import { SettingsProvider } from "@/lib/contexts/settings-context";
 import { AuthErrorHandler } from "@/components/AuthErrorHandler";
 import { Toaster } from 'sonner';
+
+const outfit = Outfit({
+  subsets: ["latin"],
+  variable: "--font-outfit",
+});
 
 export const metadata: Metadata = {
   title: "JASPEL - Enterprise Incentive & KPI System",
@@ -19,7 +24,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="id" suppressHydrationWarning>
-      <body className="font-sans antialiased" suppressHydrationWarning>
+      <body className={`${outfit.variable} font-sans antialiased`} suppressHydrationWarning>
         <AuthErrorHandler />
         <SettingsProvider>
           {children}

@@ -63,13 +63,13 @@ export function useAuth() {
     }
 
     fetchingRef.current = true
-    
+
     try {
       const supabase = createClient()
-      
+
       // Get session with timeout
       const sessionPromise = supabase.auth.getSession()
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Session timeout')), 5000)
       )
 
@@ -77,7 +77,7 @@ export function useAuth() {
         sessionPromise,
         timeoutPromise
       ]) as any
-      
+
       if (sessionError || !session?.user) {
         userCache.clear()
         if (mountedRef.current) {
@@ -88,8 +88,13 @@ export function useAuth() {
       }
 
       const sessionUser = session.user
-      const role = (sessionUser.user_metadata?.role || 'employee') as Role
-        
+      const userMeta = sessionUser.user_metadata || {}
+
+      // OPTIMIZED: Consistent role detection with middleware
+      const rawRole = (userMeta.role || '').toString().toLowerCase()
+      const isSuperEmail = sessionUser.email === 'admin@goetengrs.com'
+      let role = (isSuperEmail || rawRole === 'superadmin') ? 'superadmin' : (rawRole || 'employee') as Role
+
       // Try to get employee data with timeout
       let fullName = sessionUser.user_metadata?.full_name || sessionUser.email
       let unitId: string | undefined
@@ -97,19 +102,24 @@ export function useAuth() {
       try {
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 3000)
-        
+
         const { data: employeeData } = await supabase
           .from('m_employees')
-          .select('full_name, unit_id')
+          .select('full_name, unit_id, role')
           .eq('user_id', sessionUser.id)
           .abortSignal(controller.signal)
           .maybeSingle()
-        
+
         clearTimeout(timeoutId)
-        
+
         if (employeeData) {
           fullName = employeeData.full_name || fullName
           unitId = employeeData.unit_id
+
+          // Re-verify role from employee record if not superadmin via email
+          if (!isSuperEmail) {
+            role = (employeeData.role || role) as Role
+          }
         }
       } catch (err: any) {
         if (err.name !== 'AbortError') {
@@ -120,19 +130,19 @@ export function useAuth() {
       const newUser: User = {
         id: sessionUser.id,
         email: sessionUser.email || '',
-        role,
+        role: role as Role,
         full_name: fullName,
         unit_id: unitId,
       }
 
       // Update cache
       userCache.set(newUser)
-      
+
       if (mountedRef.current) {
         setUser(newUser)
         setLoading(false)
       }
-        
+
     } catch (error) {
       console.error('[useAuth] Error loading user:', error)
       if (mountedRef.current) {
@@ -146,7 +156,7 @@ export function useAuth() {
 
   useEffect(() => {
     mountedRef.current = true
-    
+
     loadUser()
 
     // Listen to auth changes

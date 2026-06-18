@@ -15,24 +15,42 @@ export async function getPegawaiWithUnits(
   try {
     const supabase = await createClient()
 
-    // Verify user is superadmin
+    // Verify user is authenticated
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       return { data: [], count: 0, error: 'Tidak terautentikasi' }
     }
 
     // Check if user is superadmin from auth.users metadata
-    const role = user.user_metadata?.role
+    const appRole = user.app_metadata?.role
+    const userRole = user.user_metadata?.role
+    const email = user.email
 
-    if (!role || role !== 'superadmin') {
+    const isSuperAdmin =
+      appRole === 'superadmin' ||
+      userRole === 'superadmin' ||
+      email === 'admin@goetengrs.com'
+
+    const isUnitManager = appRole === 'unit_manager' || userRole === 'unit_manager'
+
+    if (!isSuperAdmin && !isUnitManager) {
       return { data: [], count: 0, error: 'Tidak memiliki akses' }
     }
 
-    let query = supabase
+    // Use admin client for superadmin to bypass RLS, otherwise use anon client
+    const fetchClient = isSuperAdmin ? await createAdminClient() : supabase
+
+    let query = fetchClient
       .from('m_employees')
       .select('*, m_units(name)', { count: 'exact' })
       .neq('role', 'superadmin')
-      .order('created_at', { ascending: false })
+
+    // If unit manager, only show their own unit
+    if (isUnitManager && user.user_metadata?.unit_id) {
+      query = query.eq('unit_id', user.user_metadata.unit_id)
+    }
+
+    query = query.order('created_at', { ascending: false })
 
     // Apply search filter
     if (searchTerm) {
@@ -130,20 +148,25 @@ export async function updatePegawai(id: string, data: UpdatePegawaiData): Promis
 
     // Verify user is superadmin
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user || user.user_metadata?.role !== 'superadmin') {
+    const authRole = user?.app_metadata?.role || user?.user_metadata?.role
+    const isSuperAdmin = authRole === 'superadmin' || user?.email === 'admin@goetengrs.com'
+    const isUnitManager = authRole === 'unit_manager'
+
+    if (!user || (!isSuperAdmin && !isUnitManager)) {
       return { success: false, error: 'Tidak memiliki akses' }
     }
 
     // Use admin client to bypass RLS and ensure all columns are written
     const adminSupabase = await createAdminClient()
 
-    const { error } = await adminSupabase
+    // If unit manager, ensure they only update employees in their unit
+    let updateQuery = adminSupabase
       .from('m_employees')
       .update({
         employee_code: data.employee_code,
         full_name: data.full_name,
         email: data.email || null,
-        unit_id: data.unit_id,
+        unit_id: isSuperAdmin ? data.unit_id : user.user_metadata?.unit_id,
         position: data.position || null,
         phone: data.phone || null,
         nik: data.nik || null,
@@ -159,6 +182,12 @@ export async function updatePegawai(id: string, data: UpdatePegawaiData): Promis
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
+
+    if (isUnitManager) {
+      updateQuery = updateQuery.eq('unit_id', user.user_metadata?.unit_id)
+    }
+
+    const { error } = await updateQuery
 
     if (error) {
       console.error('Update error:', error)
@@ -182,14 +211,24 @@ export async function deletePegawai(id: string): Promise<{ success: boolean; err
 
     // Verify user is superadmin
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user || user.user_metadata?.role !== 'superadmin') {
+    const authRole = user?.app_metadata?.role || user?.user_metadata?.role
+    const isSuperAdmin = authRole === 'superadmin' || user?.email === 'admin@goetengrs.com'
+    const isUnitManager = authRole === 'unit_manager'
+
+    if (!user || (!isSuperAdmin && !isUnitManager)) {
       return { success: false, error: 'Tidak memiliki akses' }
     }
 
-    const { error } = await supabase
+    let deleteQuery = supabase
       .from('m_employees')
       .delete()
       .eq('id', id)
+
+    if (isUnitManager) {
+      deleteQuery = deleteQuery.eq('unit_id', user.user_metadata?.unit_id)
+    }
+
+    const { error } = await deleteQuery
 
     if (error) {
       console.error('Delete error:', error)
@@ -217,7 +256,19 @@ export async function getUnitsForDropdown(): Promise<{ data: Array<{ id: string;
       return { data: [], error: 'Tidak terautentikasi' }
     }
 
-    const { data, error } = await supabase
+    const appRole = user.app_metadata?.role
+    const userRole = user.user_metadata?.role
+    const email = user.email
+
+    const isSuperAdmin =
+      appRole === 'superadmin' ||
+      userRole === 'superadmin' ||
+      email === 'admin@goetengrs.com'
+
+    // Use admin client for superadmin to bypass RLS
+    const fetchClient = isSuperAdmin ? await createAdminClient() : supabase
+
+    const { data, error } = await fetchClient
       .from('m_units')
       .select('id, name')
       .eq('is_active', true)

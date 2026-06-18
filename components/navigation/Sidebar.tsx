@@ -114,17 +114,21 @@ function useAuth() {
         // Use getUser() instead of getSession() to avoid refresh token errors
         const { data: { user: authUser } } = await supabase.auth.getUser()
         if (authUser) {
-          const role = authUser.user_metadata?.role || 'employee'
+          const authRole = authUser.app_metadata?.role || authUser.user_metadata?.role
+          const isSuperAdmin = authRole === 'superadmin' || authUser.email === 'admin@goetengrs.com'
+          const role = isSuperAdmin ? 'superadmin' : (authRole || 'employee')
+
           const { data: emp } = await supabase
             .from('m_employees')
-            .select('full_name, unit_id')
+            .select('full_name, unit_id, role')
             .eq('user_id', authUser.id)
             .maybeSingle()
+
           setUser({
             id: authUser.id,
             email: authUser.email || '',
-            role,
-            full_name: emp?.full_name || authUser.user_metadata?.full_name,
+            role: role as any,
+            full_name: emp?.full_name || authUser.user_metadata?.full_name || 'Admin Sistem',
             unit_id: emp?.unit_id,
           })
         }
@@ -169,7 +173,7 @@ export default function Sidebar() {
         // Update CSS variable for layout
         document.documentElement.style.setProperty(
           '--sidebar-width',
-          isCollapsed ? '80px' : '288px'
+          isCollapsed ? '80px' : '272px'
         )
       } catch { }
     }
@@ -216,16 +220,16 @@ export default function Sidebar() {
   useEffect(() => {
     const handleStorageChange = () => {
       if (!user) return
-      ; (async () => {
-        try {
-          const supabase = createClient()
-          const { data } = await supabase.from('t_settings').select('value').eq('key', 'company_info').maybeSingle()
-          if (data) {
-            setCompanyInfo(data.value)
-            try { localStorage.setItem('sidebar-company-info', JSON.stringify({ value: data.value, ts: Date.now() })) } catch { }
-          }
-        } catch { }
-      })()
+        ; (async () => {
+          try {
+            const supabase = createClient()
+            const { data } = await supabase.from('t_settings').select('value').eq('key', 'company_info').maybeSingle()
+            if (data) {
+              setCompanyInfo(data.value)
+              try { localStorage.setItem('sidebar-company-info', JSON.stringify({ value: data.value, ts: Date.now() })) } catch { }
+            }
+          } catch { }
+        })()
     }
 
     const handleSidebarRefresh = () => {
@@ -260,7 +264,7 @@ export default function Sidebar() {
   // ── Skeleton (shown while loading or not mounted) ──────────────────────────
   const SkeletonContent = () => (
     <div className="flex flex-col h-full bg-white border-r border-gray-100">
-      <div className="p-5 relative overflow-hidden" style={{background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 40%, #3b82f6 100%)'}}>
+      <div className="p-5 relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 40%, #3b82f6 100%)' }}>
         <div className="h-8 bg-white/20 rounded-2xl animate-pulse" />
       </div>
       <div className="p-4 space-y-2 flex-1">
@@ -287,73 +291,65 @@ export default function Sidebar() {
     isActive,
     menuItems
   }: SidebarInnerProps) => (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden bg-white border-r border-slate-200/80 shadow-lg">
       {/* Header */}
-      <div className="relative overflow-hidden flex-shrink-0" style={{background: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 40%, #3b82f6 100%)'}}>
-        {/* Decorative circles */}
-        <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full opacity-20" style={{background: 'radial-gradient(circle, #93c5fd, transparent)'}} />
-        <div className="absolute -bottom-4 -left-4 w-20 h-20 rounded-full opacity-15" style={{background: 'radial-gradient(circle, #bfdbfe, transparent)'}} />
-        <div className="absolute top-2 right-16 w-10 h-10 rounded-full opacity-10 bg-white" />
-        <div className="absolute bottom-1 right-6 w-6 h-6 rounded-full opacity-10 bg-white" />
-        {/* Diagonal stripe accent */}
-        <div className="absolute inset-0 opacity-5" style={{backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(255,255,255,0.8) 8px, rgba(255,255,255,0.8) 9px)'}} />
+      <div className="relative overflow-hidden flex-shrink-0 premium-gradient">
+        {/* Decorative elements */}
+        <div className="absolute -top-12 -right-12 w-40 h-40 rounded-full bg-white/10 blur-3xl animate-pulse" />
+        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-indigo-500/20 blur-2xl" />
+        <div className="absolute inset-0 bg-white/5 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '16px 16px' }} />
 
-        <div className="relative p-5 border-b border-blue-500/30">
+        <div className="relative p-6 border-b border-white/10">
           <div className="flex items-center justify-between">
             {!isCollapsed && (
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-md flex-shrink-0 overflow-hidden">
+              <div className="flex items-center gap-4 min-w-0 animate-in">
+                <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center shadow-xl flex-shrink-0 overflow-hidden hover-scale border border-white/20">
                   {companyInfo?.logo
-                    ? <img src={companyInfo.logo} alt="Logo" className="w-full h-full object-contain" />
-                    : <span className="text-orange-600 font-black text-xl">P</span>
+                    ? <img src={companyInfo.logo} alt="Logo" className="w-full h-full object-contain p-1" />
+                    : <span className="text-blue-600 font-bold text-2xl">G</span>
                   }
                 </div>
-                <div className="min-w-0">
+                <div className="flex-1 min-w-0">
                   <h1
-                    className="truncate leading-tight uppercase"
-                    style={{
-                      fontSize: '17px',
-                      fontWeight: 900,
-                      color: '#f97316',
-                      textShadow: '0 1px 3px rgba(0,0,0,0.5), 0 0 8px rgba(0,0,0,0.3)',
-                      fontFamily: '"Segoe UI", system-ui, sans-serif',
-                      letterSpacing: '0.1em',
-                    }}
+                    className="leading-tight uppercase font-black tracking-tight text-[#f97316] break-words"
+                    style={{ fontSize: '19px' }}
                   >
-                    {companyInfo?.appName || 'PINTAR-JP'}
+                    {companyInfo?.appName || 'RSUD GOETENG'}
                   </h1>
-                  <p className="text-[13px] font-semibold text-white/90 truncate mt-0.5">Aplikasi Pintar-JP</p>
+                  <p className="text-[10px] font-medium text-blue-100 uppercase tracking-wide opacity-90 mt-0.5 leading-tight line-clamp-2">
+                    {companyInfo?.name || 'Management System'}
+                  </p>
                 </div>
               </div>
             )}
             {isCollapsed && (
-              <div className="w-10 h-10 bg-white rounded-2xl flex items-center justify-center shadow-lg mx-auto">
+              <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-xl mx-auto hover-scale border border-white/20 animate-in">
                 {companyInfo?.logo
-                  ? <img src={companyInfo.logo} alt="Logo" className="w-full h-full object-contain p-1" />
-                  : <span className="text-orange-600 font-black text-base">P</span>
+                  ? <img src={companyInfo.logo} alt="Logo" className="w-full h-full object-contain p-2" />
+                  : <span className="text-blue-600 font-bold text-xl">G</span>
                 }
               </div>
             )}
             <button
               onClick={() => setIsCollapsed(c => !c)}
-              className="p-1.5 hover:bg-white/20 rounded-xl transition-colors text-white/80 hover:text-white flex-shrink-0 hidden lg:flex"
+              className="p-2 hover:bg-white/20 rounded-xl transition-all text-white/80 hover:text-white flex-shrink-0 hidden lg:flex hover-scale border border-transparent hover:border-white/10"
               aria-label={isCollapsed ? 'Expand' : 'Collapse'}
             >
-              {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+              {isCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
             </button>
             <button
               onClick={() => setIsMobileOpen(false)}
-              className="p-1.5 hover:bg-white/20 rounded-xl transition-colors text-white/80 hover:text-white flex-shrink-0 lg:hidden"
+              className="p-2 hover:bg-white/20 rounded-xl transition-all text-white/80 hover:text-white flex-shrink-0 lg:hidden hover-scale"
               aria-label="Close"
             >
-              <X className="h-4 w-4" />
+              <X size={20} />
             </button>
           </div>
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+      <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-1.5 scrollbar-hide">
         {menuItems.map(item => {
           if (!item) return null
           const Icon = iconMap[item.icon] || User
@@ -366,25 +362,27 @@ export default function Sidebar() {
               href={item.path}
               onClick={() => setIsMobileOpen(false)}
               className={cn(
-                'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-150 group',
+                'w-full flex items-center gap-4 px-4 py-2 rounded-xl transition-all duration-300 group hover-scale',
                 active
-                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md shadow-blue-500/20'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
-                isCollapsed && 'justify-center'
+                  ? 'premium-gradient text-white shadow-lg shadow-blue-600/30 ring-1 ring-white/20'
+                  : 'text-slate-600 hover:bg-blue-50/50 hover:text-blue-700'
               )}
             >
               <div className="relative flex-shrink-0">
-                <Icon className={cn('h-5 w-5', active ? 'text-white' : 'text-gray-500 group-hover:text-blue-600')} />
+                <Icon size={20} className={cn('transition-all duration-300', active ? 'text-white scale-110' : 'text-slate-400 group-hover:text-blue-600 group-hover:scale-110')} />
                 {isNotif && unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                  <span className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white shadow-sm animate-bounce">
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
                 )}
               </div>
               {!isCollapsed && (
-                <span className={cn('text-sm font-semibold truncate', active ? 'text-white' : '')}>
+                <span className={cn('text-[14px] font-medium tracking-normal truncate', active ? 'text-white' : 'text-slate-600')}>
                   {item.label}
                 </span>
+              )}
+              {active && !isCollapsed && (
+                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white shadow-sm" />
               )}
             </OptimizedLink>
           )
@@ -392,65 +390,70 @@ export default function Sidebar() {
       </nav>
 
       {/* Bottom: User Info + Logout */}
-      <div className="p-3 border-t border-gray-100 flex-shrink-0">
+      <div className="p-4 bg-slate-50/50 border-t border-slate-100 flex-shrink-0">
         {user && (
           <>
             {/* Confirm dialog */}
             {showLogoutDialog && (
-              <div className="mb-2 p-3 bg-red-50 rounded-xl border border-red-100">
-                <p className="text-xs text-gray-700 font-semibold mb-3 text-center">Yakin ingin keluar?</p>
+              <div className="mb-3 p-4 glass bg-white/90 rounded-2xl border border-red-100 shadow-xl animate-in">
+                <p className="text-[13px] text-slate-800 font-bold mb-4 text-center">Keluar dari sistem?</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setShowLogoutDialog(false)}
-                    className="flex-1 h-8 text-xs font-semibold rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
+                    className="flex-1 h-10 text-xs font-semibold rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-all active:scale-95"
                   >
-                    Batal
+                    BATAL
                   </button>
                   <button
                     onClick={handleLogout}
-                    className="flex-1 h-8 text-xs font-semibold rounded-lg bg-red-500 hover:bg-red-600 text-white transition-colors"
+                    className="flex-1 h-10 text-xs font-semibold rounded-xl bg-red-500 hover:bg-red-600 text-white shadow-md shadow-red-200 transition-all active:scale-95"
                   >
-                    Keluar
+                    YA, KELUAR
                   </button>
                 </div>
               </div>
             )}
 
-            {/* User row with logout icon */}
+            {/* User Profile Card */}
             <div className={cn(
-              'rounded-xl bg-gray-50 border border-gray-100',
-              isCollapsed ? 'px-2 py-2 flex flex-col items-center gap-2' : 'px-3 py-2.5 flex items-center gap-3'
+              'rounded-2xl bg-white border border-slate-100 shadow-sm transition-all duration-300',
+              isCollapsed ? 'p-2 flex flex-col items-center gap-3' : 'p-3 flex items-center gap-4 hover:shadow-md'
             )}>
               {/* Avatar */}
-              <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm shadow flex-shrink-0">
-                {(user.full_name || user.email || 'U').charAt(0).toUpperCase()}
+              <div className="relative group flex-shrink-0">
+                <div className="w-11 h-11 premium-gradient rounded-2xl flex items-center justify-center text-white font-bold text-lg shadow-lg group-hover:scale-105 transition-transform">
+                  {(user.full_name || user.email || 'U').charAt(0).toUpperCase()}
+                </div>
+                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-white rounded-full shadow-sm" />
               </div>
 
               {!isCollapsed && (
-                <div className="min-w-0 flex-1">
-                  <div className="font-semibold text-sm text-gray-900 truncate">
+                <div className="min-w-0 flex-1 animate-in">
+                  <div className="font-semibold text-[13px] text-slate-800 truncate">
                     {user.full_name || user.email}
                   </div>
-                  {unitName && <div className="text-xs text-gray-400 truncate">{unitName}</div>}
-                  <span className={cn(
-                    'text-xs px-2 py-0.5 rounded-full font-semibold mt-0.5 inline-block',
-                    user.role === 'superadmin' ? 'bg-purple-100 text-purple-700' :
-                      user.role === 'unit_manager' ? 'bg-blue-100 text-blue-700' :
-                        'bg-green-100 text-green-700'
-                  )}>
-                    {user.role === 'superadmin' ? 'Superadmin' :
-                      user.role === 'unit_manager' ? 'Manager Unit' : 'Pegawai'}
-                  </span>
+                  {unitName && <div className="text-[10px] text-slate-400 truncate mt-0.5">{unitName}</div>}
+                  <div className="mt-1.5 flex items-center gap-1.5">
+                    <span className={cn(
+                      'text-[10px] px-2 py-0.5 rounded-md font-medium',
+                      user.role === 'superadmin' ? 'bg-purple-100 text-purple-700' :
+                        user.role === 'unit_manager' ? 'bg-blue-100 text-blue-700' :
+                          'bg-slate-100 text-slate-600'
+                    )}>
+                      {user.role === 'superadmin' ? 'Superadmin' :
+                        user.role === 'unit_manager' ? 'Manajer Unit' : 'Pegawai'}
+                    </span>
+                  </div>
                 </div>
               )}
 
-              {/* Logout icon button */}
+              {/* Logout button */}
               <button
                 onClick={() => setShowLogoutDialog(true)}
                 title="Keluar"
-                className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors flex-shrink-0"
+                className="p-2.5 rounded-xl text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all hover-scale"
               >
-                <LogOut className="h-4 w-4" />
+                <LogOut size={18} />
               </button>
             </div>
           </>
@@ -465,16 +468,16 @@ export default function Sidebar() {
       {/* ── Mobile hamburger button (always visible on mobile) ── */}
       <button
         onClick={() => setIsMobileOpen(o => !o)}
-        className="lg:hidden fixed top-3 left-3 z-[60] p-2.5 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-500/30 active:scale-95 transition-transform"
+        className="lg:hidden fixed top-4 left-4 z-[60] w-12 h-12 flex items-center justify-center premium-gradient text-white rounded-2xl shadow-xl shadow-blue-500/30 active:scale-95 transition-all hover-scale hover:rotate-12 group"
         aria-label="Toggle navigation"
       >
-        <Menu className="h-5 w-5" />
+        <Menu size={24} className="group-hover:scale-110 transition-transform" />
       </button>
 
       {/* ── Mobile backdrop ── */}
       {isMobileOpen && (
         <div
-          className="lg:hidden fixed inset-0 z-[55] bg-slate-900/50 backdrop-blur-sm"
+          className="lg:hidden fixed inset-0 z-[55] bg-slate-900/60 backdrop-blur-md animate-in"
           onClick={() => setIsMobileOpen(false)}
         />
       )}
@@ -482,7 +485,7 @@ export default function Sidebar() {
       {/* ── Mobile sidebar (slides in from left) ── */}
       <aside
         className={cn(
-          'lg:hidden fixed top-0 left-0 h-screen w-72 bg-white border-r border-gray-200 shadow-xl z-[60] transition-transform duration-300 ease-in-out',
+          'lg:hidden fixed top-0 left-0 h-screen w-[300px] z-[60] transition-transform duration-500 ease-out',
           isMobileOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
@@ -508,8 +511,8 @@ export default function Sidebar() {
       {/* ── Desktop sidebar (always visible, collapsible) ── */}
       <aside
         className={cn(
-          'hidden lg:flex flex-col fixed top-0 left-0 h-screen bg-white border-r border-gray-200 shadow-sm z-[50] transition-all duration-300',
-          mounted && isCollapsed ? 'w-20' : 'w-72'
+          'hidden lg:flex flex-col fixed top-0 left-0 h-screen bg-transparent z-[50] transition-all duration-500 ease-out',
+          mounted && isCollapsed ? 'w-20' : 'w-[272px]'
         )}
       >
         {!mounted || loading ? <SkeletonContent /> : (

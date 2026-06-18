@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Plus, Search, RefreshCw } from 'lucide-react'
+import { Plus, Search, RefreshCw, PieChart, Building2, Users } from 'lucide-react'
 import { UnitTable } from '@/components/units/UnitTable'
-import { createClient } from '@/lib/supabase/client'
+import { getUnitsWithCounts } from './actions'
 
 // Debounce hook for search optimization
 function useDebounce<T>(value: T, delay: number): T {
@@ -36,47 +36,12 @@ export default function UnitsPage() {
   const loadUnits = useCallback(async () => {
     setLoading(true)
     try {
-      const supabase = createClient()
+      const result = await getUnitsWithCounts()
 
-      // Get all units with employee count in one go if possible
-      // Otherwise fallback to individual counts if join fails
-      const { data: units, error: unitsError } = await supabase
-        .from('m_units')
-        .select(`
-          *,
-          employees:m_employees(count)
-        `)
-        .neq('code', 'superadmin')
-        .order('code', { ascending: true })
-
-      if (unitsError) {
-        console.error('Error fetching units with counts:', unitsError)
-
-        // Fallback: fetch units normally then counts
-        const { data: simpleUnits, error: simpleError } = await supabase
-          .from('m_units')
-          .select('*')
-          .order('code', { ascending: true })
-
-        if (simpleError) throw simpleError
-
-        const unitsWithCounts = await Promise.all(
-          (simpleUnits || []).map(async (unit) => {
-            const { count } = await supabase
-              .from('m_employees')
-              .select('*', { count: 'exact', head: true })
-              .eq('unit_id', unit.id)
-
-            return {
-              ...unit,
-              employees: [{ count: count || 0 }]
-            }
-          })
-        )
-        setUnits(unitsWithCounts)
+      if (result.error) {
+        console.error('Error loading units:', result.error)
       } else {
-        console.log('Units with counts from DB:', units)
-        setUnits(units || [])
+        setUnits(result.data || [])
       }
     } catch (error) {
       console.error('Error loading units:', error)
@@ -102,6 +67,23 @@ export default function UnitsPage() {
     )
   })
 
+  // Calculate total proportion from all units
+  const totalProportion = useMemo(() => {
+    return units.reduce((sum, unit) => {
+      return sum + (parseFloat(unit.proportion_percentage) || 0)
+    }, 0)
+  }, [units])
+
+  // Calculate total employees across all units
+  const totalEmployees = useMemo(() => {
+    return units
+      .filter(u => u.name?.toUpperCase() !== 'SUPERADMIN')
+      .reduce((sum, unit) => {
+        const empCount = unit.employees?.[0]?.count || 0
+        return sum + empCount
+      }, 0)
+  }, [units])
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
@@ -115,6 +97,54 @@ export default function UnitsPage() {
             Muat Ulang
           </Button>
         </div>
+      </div>
+
+      {/* Stat Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card className="hover:shadow-lg hover:border-blue-200 transition-all duration-300 border border-gray-100 bg-gradient-to-br from-white to-gray-50">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+            <CardTitle className="text-sm font-bold text-gray-700 uppercase tracking-wide">Total Unit</CardTitle>
+            <div className="p-2.5 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg">
+              <Building2 className="h-5 w-5 text-blue-600" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-black text-gray-900">{units.length}</div>
+            <p className="text-sm text-gray-500 font-medium">unit terdaftar</p>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg hover:border-emerald-200 transition-all duration-300 border border-gray-100 bg-gradient-to-br from-white to-emerald-50/30">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+            <CardTitle className="text-sm font-bold text-gray-700 uppercase tracking-wide">Total Pegawai</CardTitle>
+            <div className="p-2.5 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-lg">
+              <Users className="h-5 w-5 text-emerald-600" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-black text-gray-900">{totalEmployees}</div>
+            <p className="text-sm text-gray-500 font-medium">pegawai di semua unit</p>
+          </CardContent>
+        </Card>
+
+        <Card className={`hover:shadow-lg transition-all duration-300 border ${totalProportion === 100 ? 'border-green-200 hover:border-green-300 bg-gradient-to-br from-white to-green-50/30' : 'border-amber-200 hover:border-amber-300 bg-gradient-to-br from-white to-amber-50/30'}`}>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+            <CardTitle className="text-sm font-bold text-gray-700 uppercase tracking-wide">Total Proporsi</CardTitle>
+            <div className={`p-2.5 rounded-lg ${totalProportion === 100 ? 'bg-gradient-to-br from-green-50 to-green-100' : 'bg-gradient-to-br from-amber-50 to-amber-100'}`}>
+              <PieChart className={`h-5 w-5 ${totalProportion === 100 ? 'text-green-600' : 'text-amber-600'}`} />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className={`text-3xl font-black ${totalProportion === 100 ? 'text-green-700' : 'text-amber-700'}`}>
+              {totalProportion.toFixed(2)}%
+            </div>
+            <p className="text-sm text-gray-500 font-medium">
+              {totalProportion === 100
+                ? '✓ Proporsi seimbang (100%)'
+                : 'dari total klaim terverifikasi dan terbayar'}
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
@@ -143,3 +173,4 @@ export default function UnitsPage() {
     </div>
   )
 }
+

@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Save, AlertCircle, Target, TrendingUp, Copy, LayoutDashboard, CheckCircle2 } from 'lucide-react'
+import { Save, AlertCircle, Target, TrendingUp, Copy, LayoutDashboard, CheckCircle2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { Progress } from '@/components/ui/progress'
@@ -68,12 +68,14 @@ interface KPICategory {
 }
 
 interface SubAssessmentData {
+  id?: string
   sub_indicator_id: string
   realization_value: number
   score: number
 }
 
 interface AssessmentData {
+  id?: string
   indicator_id: string
   realization_value: number
   achievement_percentage: number
@@ -171,12 +173,14 @@ export default function AssessmentFormDialog({
           if (item.sub_indicator_id) {
             // This is a sub-assessment row
             assessmentMap[indicatorId].sub_assessments.push({
+              id: item.id,
               sub_indicator_id: item.sub_indicator_id,
               realization_value: item.realization_value,
               score: item.score || 0
             })
           } else {
             // This is the main indicator row
+            assessmentMap[indicatorId].id = item.id
             assessmentMap[indicatorId].realization_value = item.realization_value
             assessmentMap[indicatorId].achievement_percentage = item.achievement_percentage || 0
             assessmentMap[indicatorId].score = item.score || 0
@@ -330,9 +334,9 @@ export default function AssessmentFormDialog({
     setError(null)
 
     try {
-      // Prepare assessments for all indicators
-      const assessmentPromises = categories.flatMap(category =>
-        category.indicators.map(async (indicator) => {
+      // Prepare batch data for all indicators
+      const batchData = categories.flatMap(category =>
+        category.indicators.map((indicator) => {
           const assessment = assessments[indicator.id] || {
             indicator_id: indicator.id,
             realization_value: 0,
@@ -342,38 +346,48 @@ export default function AssessmentFormDialog({
             sub_assessments: []
           }
 
-          const response = await fetch('/api/assessment', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              employee_id: employee.employee_id,
-              indicator_id: indicator.id,
-              period: period,
-              realization_value: assessment.realization_value,
-              target_value: getIndicatorTarget(indicator),
-              weight_percentage: indicator.weight_percentage,
-              notes: assessment.notes,
-              sub_assessments: assessment.sub_assessments
-            })
-          })
-
-          if (!response.ok) {
-            const errorData = await response.json()
-            throw new Error(errorData.error || 'Failed to save assessment')
+          return {
+            id: assessment.id,
+            employee_id: employee.employee_id,
+            indicator_id: indicator.id,
+            period: period,
+            realization_value: assessment.realization_value,
+            target_value: getIndicatorTarget(indicator),
+            weight_percentage: indicator.weight_percentage,
+            achievement_percentage: assessment.achievement_percentage,
+            score: assessment.score,
+            notes: assessment.notes,
+            sub_assessments: assessment.sub_assessments.map(sub => ({
+              id: sub.id,
+              sub_indicator_id: sub.sub_indicator_id,
+              realization_value: sub.realization_value,
+              score: sub.score
+            }))
           }
-
-          return response.json()
         })
       )
 
-      await Promise.all(assessmentPromises)
-      toast.success('Penilaian berhasil disimpan!')
+      const response = await fetch('/api/assessment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(batchData)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Gagal menyimpan penilaian')
+      }
+
+      // 2. Trigger parent refresh/success handler
+      // This will call handleAssessmentSaved in AssessmentTable,
+      // which shows the toast success and closes the dialog.
       onSaved()
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to save assessments')
+      setError(error instanceof Error ? error.message : 'Gagal menyimpan penilaian')
       console.error('Error saving assessments:', error)
+      toast.error('Gagal menyimpan penilaian: ' + (error instanceof Error ? error.message : 'Unknown error'))
     } finally {
       setSaving(false)
     }
@@ -427,9 +441,9 @@ export default function AssessmentFormDialog({
           // because setAssessments state update won't be available immediately for handleSave
           setSaving(true)
 
-          // Refactored save logic for direct data
-          const savePromises = categories.flatMap(category =>
-            category.indicators.map(async (indicator) => {
+          // Refactored save logic for direct batch data
+          const batchData = categories.flatMap(category =>
+            category.indicators.map((indicator) => {
               const assessment = assessmentMap[indicator.id] || {
                 indicator_id: indicator.id,
                 realization_value: 0,
@@ -439,24 +453,31 @@ export default function AssessmentFormDialog({
                 sub_assessments: []
               }
 
-              return fetch('/api/assessment', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  employee_id: employee.employee_id,
-                  indicator_id: indicator.id,
-                  period: period,
-                  realization_value: assessment.realization_value,
-                  target_value: getIndicatorTarget(indicator),
-                  weight_percentage: indicator.weight_percentage,
-                  notes: assessment.notes,
-                  sub_assessments: assessment.sub_assessments
-                })
-              })
+              return {
+                employee_id: employee.employee_id,
+                indicator_id: indicator.id,
+                period: period,
+                realization_value: assessment.realization_value,
+                target_value: getIndicatorTarget(indicator),
+                weight_percentage: indicator.weight_percentage,
+                notes: assessment.notes,
+                sub_assessments: assessment.sub_assessments,
+                assessor_id: '' // API will handle this from session
+              }
             })
           )
 
-          await Promise.all(savePromises)
+          const saveResponse = await fetch('/api/assessment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(batchData)
+          })
+
+          if (!saveResponse.ok) {
+            const errorData = await saveResponse.json()
+            throw new Error(errorData.error || 'Gagal menyimpan data yang disalin')
+          }
+
           toast.success('Penilaian berhasil disalin dan disimpan!')
           onSaved()
           onClose()
@@ -468,7 +489,7 @@ export default function AssessmentFormDialog({
       }
     } catch (error) {
       console.error('Error copying previous assessments:', error)
-      setError('Terjadi kesalahan saat menyalin data.')
+      setError(error instanceof Error ? error.message : 'Terjadi kesalahan saat menyalin data.')
     } finally {
       setCopyingPrevious(false)
       setSaving(false)

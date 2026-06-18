@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 
 interface AssessmentStatus {
   employee_id: string
@@ -106,15 +106,40 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const appRole = user.app_metadata?.role
+    const userRole = user.user_metadata?.role
+    const email = user.email
+
+    const isSuperAdmin =
+      appRole === 'superadmin' ||
+      userRole === 'superadmin' ||
+      email === 'admin@goetengrs.com'
+
+    // Use admin client for superadmin to bypass RLS, otherwise regular client
+    const fetchClient = isSuperAdmin ? await createAdminClient() : supabase
+
     // Get current user's employee record
-    const { data: currentEmployee } = await supabase
+    let { data: currentEmployee } = await fetchClient
       .from('m_employees')
       .select('id, role, unit_id')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
 
     if (!currentEmployee) {
-      return NextResponse.json({ error: 'Employee record not found' }, { status: 404 })
+      if (isSuperAdmin) {
+        currentEmployee = {
+          id: user.id,
+          role: 'superadmin',
+          unit_id: '0'
+        }
+      } else {
+        return NextResponse.json({ error: 'Employee record not found' }, { status: 404 })
+      }
+    }
+
+    // Ensure role is superadmin if identity matches
+    if (isSuperAdmin) {
+      currentEmployee.role = 'superadmin'
     }
 
     const { searchParams } = new URL(request.url)
@@ -143,7 +168,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Get status for specific employee
-      const statuses = await getAssessmentStatus(supabase, currentEmployee.role === 'unit_manager' ? currentEmployee.unit_id : null, period)
+      const statuses = await getAssessmentStatus(fetchClient, currentEmployee.role === 'unit_manager' ? currentEmployee.unit_id : null, period)
       const employeeStatus = statuses.find(s => s.employee_id === employeeId)
 
       if (!employeeStatus) {
@@ -154,7 +179,7 @@ export async function GET(request: NextRequest) {
     } else {
       // Get status for all employees based on role
       const unitId = currentEmployee.role === 'unit_manager' ? currentEmployee.unit_id : null
-      const statuses = await getAssessmentStatus(supabase, unitId, period)
+      const statuses = await getAssessmentStatus(fetchClient, unitId, period)
 
       // Calculate summary statistics
       const summary = {

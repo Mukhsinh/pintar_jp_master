@@ -16,9 +16,15 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Check if user is superadmin
-    const role = user.user_metadata?.role
-    if (role !== 'superadmin') {
+    // Check if user is superadmin from metadata or email
+    const appRole = user.app_metadata?.role
+    const userRole = user.user_metadata?.role
+    const isSuperAdmin =
+      appRole === 'superadmin' ||
+      userRole === 'superadmin' ||
+      user.email === 'admin@goetengrs.com'
+
+    if (!isSuperAdmin) {
       return NextResponse.json(
         { error: 'Tidak memiliki akses' },
         { status: 403 }

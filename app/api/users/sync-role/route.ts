@@ -36,6 +36,10 @@ export async function POST() {
             .maybeSingle()
 
         if (empError || !employee) {
+            // If no employee record, that's OK for superadmin - just skip sync
+            if (metadataRole === 'superadmin') {
+                return NextResponse.json({ success: true, synced: false, message: 'Superadmin without employee record, sync skipped' })
+            }
             return NextResponse.json({ success: false, error: 'Employee not found' }, { status: 404 })
         }
 

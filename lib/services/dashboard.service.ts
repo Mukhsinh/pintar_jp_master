@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 
 export interface DashboardStats {
   totalEmployees: number
@@ -104,14 +104,27 @@ export class DashboardService {
    * Get dashboard statistics for superadmin - using direct queries
    */
   static async getSuperadminStats(unitId?: string, period?: string, year?: string): Promise<DashboardStats> {
-    const supabase = await createClient()
+    const supabase = await createAdminClient()
 
     try {
       const resolvedPeriods = await this.getResolvedPeriods(supabase, period, year)
 
-      // Parallel direct queries instead of RPC
-      let empQuery = supabase.from('m_employees').select('id', { count: 'exact', head: true }).eq('is_active', true).neq('role', 'superadmin')
-      let unitQuery = supabase.from('m_units').select('id', { count: 'exact', head: true }).eq('is_active', true).neq('code', 'superadmin')
+      // Get active non-admin employee IDs first to use as a filter
+      const { data: activeEmps } = await supabase
+        .from('m_employees')
+        .select('id')
+        .eq('is_active', true)
+        .neq('role', 'superadmin')
+
+      const activeEmpIds = activeEmps?.map(e => e.id) || []
+      const totalActiveEmployees = activeEmpIds.length
+
+      // Direct count of units excluding superadmin
+      const { count: totalUnits } = await supabase
+        .from('m_units')
+        .select('id', { count: 'exact', head: true })
+        .eq('is_active', true)
+        .neq('code', 'superadmin')
 
       let assQuery = supabase
         .from('t_kpi_assessments')
@@ -120,39 +133,37 @@ export class DashboardService {
           weight_percentage,
           realization_value,
           target_value,
-          m_kpi_indicators!inner (
-            m_kpi_categories!inner (
+          m_kpi_indicators (
+            m_kpi_categories (
               category,
               weight_percentage
             )
           )
         `)
         .in('period', resolvedPeriods)
+        .in('employee_id', activeEmpIds) // Filter only active non-admin employees
 
-      if (unitId) {
-        empQuery = empQuery.eq('unit_id', unitId)
-        // If filtering by unit, we only care about that 1 unit
-        unitQuery = unitQuery.eq('id', unitId)
+      let filteredActiveEmpIds = activeEmpIds
+      if (unitId && unitId !== 'all') {
+        const { data: unitEmps } = await supabase
+          .from('m_employees')
+          .select('id')
+          .eq('unit_id', unitId)
+          .eq('is_active', true)
+          .neq('role', 'superadmin')
 
-        const { data: emps } = await supabase.from('m_employees').select('id').eq('unit_id', unitId)
-        const empIds = emps?.map((e: any) => e.id) || []
-        assQuery = assQuery.in('employee_id', empIds)
+        filteredActiveEmpIds = unitEmps?.map(e => e.id) || []
+        assQuery = assQuery.in('employee_id', filteredActiveEmpIds)
       }
 
-      const [employeesRes, unitsRes, assessmentsRes] = await Promise.all([
-        empQuery,
-        unitQuery,
-        assQuery
-      ])
+      const totalDisplayEmployees = filteredActiveEmpIds.length
 
-      const totalEmployees = employeesRes.count || 0
-      const totalUnits = unitsRes.count || 0
+      const { data: assessments, error: assError } = await assQuery
+      if (assError) throw assError
 
-      const assessments = assessmentsRes.data || []
-
-      // Efficiently group assessments by employee and category in one pass
+      // Group assessments by employee for calculation
       const empDataMap = new Map<string, { [key: string]: any[] }>()
-      for (const a of assessments) {
+      for (const a of assessments || []) {
         const empId = a.employee_id
         if (!empDataMap.has(empId)) {
           empDataMap.set(empId, { P1: [], P2: [], P3: [] })
@@ -196,20 +207,22 @@ export class DashboardService {
         return totalScore
       }
 
-      const uniqueAssessedEmployees = Array.from(empDataMap.keys())
-      const employeeScores = uniqueAssessedEmployees.map(empId => calculateScore(empId))
+      const assessedEmployeeIds = Array.from(empDataMap.keys())
+      const totalAssessed = assessedEmployeeIds.length
 
-      const avgScore = employeeScores.length > 0
-        ? employeeScores.reduce((sum, score) => sum + score, 0) / employeeScores.length
+      // Calculate average score - across only assessed employees for a true performance average
+      const assessedScores = assessedEmployeeIds.map(empId => calculateScore(empId))
+      const avgScore = totalAssessed > 0
+        ? assessedScores.reduce((sum, score) => sum + score, 0) / totalAssessed
         : 0
 
-      const completionRate = totalEmployees > 0
-        ? (uniqueAssessedEmployees.length / totalEmployees) * 100
+      const completionRate = totalDisplayEmployees > 0
+        ? (totalAssessed / totalDisplayEmployees) * 100
         : 0
 
       return {
-        totalEmployees,
-        totalUnits,
+        totalEmployees: totalDisplayEmployees,
+        totalUnits: totalUnits || 0,
         avgScore: Math.round(avgScore * 100) / 100,
         completionRate: Math.round(completionRate * 10) / 10,
         trends: {
@@ -245,7 +258,7 @@ export class DashboardService {
    * Get top performers - using direct queries with joins
    */
   static async getTopPerformers(limit: number = 5, unitId?: string, period?: string, year?: string): Promise<TopPerformer[]> {
-    const supabase = await createClient()
+    const supabase = await createAdminClient()
 
     try {
       const resolvedPeriods = await this.getResolvedPeriods(supabase, period, year)
@@ -361,7 +374,7 @@ export class DashboardService {
    * Get worst performers - using direct queries with joins
    */
   static async getWorstPerformers(limit: number = 5, unitId?: string, period?: string, year?: string): Promise<TopPerformer[]> {
-    const supabase = await createClient()
+    const supabase = await createAdminClient()
 
     try {
       const resolvedPeriods = await this.getResolvedPeriods(supabase, period, year)
@@ -473,7 +486,7 @@ export class DashboardService {
     }
   }
   static async getUnitPerformance(period?: string, year?: string): Promise<UnitPerformance[]> {
-    const supabase = await createClient()
+    const supabase = await createAdminClient()
 
     try {
       const resolvedPeriods = await this.getResolvedPeriods(supabase, period, year)
@@ -594,7 +607,7 @@ export class DashboardService {
    * Get performance trend data
    */
   static async getPerformanceTrend(months: number = 6, unitId?: string, period?: string, year?: string): Promise<PerformanceData[]> {
-    const supabase = await createClient()
+    const supabase = await createAdminClient()
 
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
     const data: PerformanceData[] = []
@@ -630,7 +643,7 @@ export class DashboardService {
         `)
         .in('period', periods)
 
-      if (unitId) {
+      if (unitId && unitId !== 'all') {
         const { data: emps } = await supabase.from('m_employees').select('id').eq('unit_id', unitId)
         const empIds = emps?.map((e: any) => e.id) || []
         q = q.in('employee_id', empIds)
@@ -753,7 +766,7 @@ export class DashboardService {
    * Get KPI distribution data
    */
   static async getKPIDistribution(unitId?: string, period?: string, year?: string) {
-    const supabase = await createClient()
+    const supabase = await createAdminClient()
 
     try {
       const resolvedPeriods = await this.getResolvedPeriods(supabase, period, year)

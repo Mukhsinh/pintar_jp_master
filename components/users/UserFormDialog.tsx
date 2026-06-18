@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { createClient } from '@/lib/supabase/client'
-import { X } from 'lucide-react'
-import { type UserWithPegawai } from '@/app/(authenticated)/users/actions'
+import { X, Search, CheckCircle2, ChevronDown } from 'lucide-react'
+import { type UserWithPegawai, getEmployeesForUserCreation } from '@/app/(authenticated)/users/actions'
+import { cn } from '@/lib/utils'
 
 interface UserFormDialogProps {
   open: boolean
@@ -20,6 +20,7 @@ interface Pegawai {
   employee_code: string
   full_name: string
   unit_id: string
+  user_id?: string | null
 }
 
 interface Unit {
@@ -30,7 +31,7 @@ interface Unit {
 const roleLabels: Record<string, string> = {
   superadmin: 'Superadmin',
   unit_manager: 'Manajer Unit',
-  employee: 'Pegawai'
+  employee: 'Pegawai Biasa'
 }
 
 export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialogProps) {
@@ -45,6 +46,8 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [tempPassword, setTempPassword] = useState('')
+  const [pegawaiSearchTerm, setPegawaiSearchTerm] = useState('')
+  const [pegawaiUnitFilter, setPegawaiUnitFilter] = useState('all')
 
   useEffect(() => {
     if (open) {
@@ -58,136 +61,111 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
           employee_ids: user.employee_id ? [user.employee_id] : [],
         })
       } else {
-        setFormData({
-          role: 'employee',
-          unit_id: '',
-          password: '',
-          employee_ids: [],
-        })
+        setFormData({ role: 'employee', unit_id: '', password: '', employee_ids: [] })
       }
       setError('')
       setTempPassword('')
+      setPegawaiSearchTerm('')
+      setPegawaiUnitFilter('all')
     }
   }, [open, user])
 
   const loadPegawai = async () => {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('m_employees')
-      .select('id, employee_code, full_name, unit_id')
-      .eq('is_active', true)
-      .is('user_id', null)
-      .order('full_name')
-
-    if (data) {
-      setPegawaiList(data)
+    try {
+      const result = await getEmployeesForUserCreation()
+      if (result.data) setPegawaiList(result.data)
+      else if (result.error) setError(result.error)
+    } catch (err: any) {
+      setError('Gagal memuat daftar pegawai: ' + err.message)
     }
   }
 
   const loadUnits = async () => {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('m_units')
-      .select('id, name')
-      .eq('is_active', true)
-      .order('name')
-
-    if (data) {
-      setUnitList(data)
+    try {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('m_units')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('name')
+      if (data) setUnitList(data)
+    } catch (err) {
+      console.error('Failed to load units:', err)
     }
   }
 
+  const filteredPegawai = useMemo(() => {
+    return pegawaiList.filter(p => {
+      const matchesSearch =
+        p.full_name.toLowerCase().includes(pegawaiSearchTerm.toLowerCase()) ||
+        p.employee_code.toLowerCase().includes(pegawaiSearchTerm.toLowerCase())
+      const matchesUnit = pegawaiUnitFilter === 'all' || p.unit_id === pegawaiUnitFilter
+      return matchesSearch && matchesUnit
+    })
+  }, [pegawaiList, pegawaiSearchTerm, pegawaiUnitFilter])
+
   const handleEmployeeToggle = (employeeId: string) => {
+    if (user) {
+      setFormData(prev => ({ ...prev, employee_ids: [employeeId] }))
+      return
+    }
     setFormData(prev => {
       const isSelected = prev.employee_ids.includes(employeeId)
-      if (isSelected) {
-        return {
-          ...prev,
-          employee_ids: prev.employee_ids.filter(id => id !== employeeId)
-        }
-      } else {
-        return {
-          ...prev,
-          employee_ids: [...prev.employee_ids, employeeId]
-        }
+      return {
+        ...prev,
+        employee_ids: isSelected
+          ? prev.employee_ids.filter(id => id !== employeeId)
+          : [...prev.employee_ids, employeeId]
       }
     })
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.MouseEvent | React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
 
     try {
       if (!user) {
-        // Create new user
         if (!formData.password) {
-          setError('Password wajib diisi untuk pengguna baru')
+          setError('Kata sandi wajib diisi untuk pengguna baru')
           setLoading(false)
           return
         }
-
         if (formData.employee_ids.length === 0) {
-          setError('Pilih minimal satu pegawai')
+          setError('Pilih minimal satu pegawai untuk dibuatkan akun')
           setLoading(false)
           return
         }
 
         let successCount = 0
-        let failedEmployees: string[] = []
+        const failedEmployees: string[] = []
 
         for (const employeeId of formData.employee_ids) {
           const employee = pegawaiList.find(p => p.id === employeeId)
           if (!employee) continue
-
-          const email = `${employee.employee_code.toLowerCase()}@jaspel.local`
-
+          const email = `${employee.employee_code.toLowerCase()}@goetengrs.com`
           const response = await fetch('/api/users/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email,
-              password: formData.password,
-              role: formData.role,
-              employee_id: employeeId,
-            })
+            body: JSON.stringify({ email, password: formData.password, role: formData.role, employee_id: employeeId })
           })
-
           const result = await response.json()
-
-          if (result.success) {
-            successCount++
-          } else {
-            failedEmployees.push(employee.full_name)
-          }
+          if (result.success) successCount++
+          else failedEmployees.push(employee.full_name)
         }
 
         if (successCount > 0) {
           setTempPassword(formData.password)
-          let message = `Berhasil membuat ${successCount} pengguna. Password: ${formData.password}`
-          if (failedEmployees.length > 0) {
-            message += `\n\nGagal membuat pengguna untuk: ${failedEmployees.join(', ')}`
-          }
-          alert(message)
+          const msg = failedEmployees.length > 0
+            ? `Berhasil membuat ${successCount} akun. Gagal: ${failedEmployees.join(', ')}`
+            : `Berhasil membuat ${successCount} akun baru.`
+          alert(msg)
           onSuccess()
         } else {
-          setError('Gagal membuat pengguna')
+          setError('Gagal membuat akun pengguna. Periksa apakah NIP sudah memiliki akun.')
         }
       } else {
-        // Update existing user
-        if (!formData.role) {
-          setError('Peran wajib dipilih')
-          setLoading(false)
-          return
-        }
-
-        if (!formData.unit_id) {
-          setError('Unit wajib dipilih')
-          setLoading(false)
-          return
-        }
-
         const response = await fetch('/api/users/update', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -200,182 +178,238 @@ export function UserFormDialog({ open, onClose, onSuccess, user }: UserFormDialo
             employee_id: formData.employee_ids[0] || null,
           })
         })
-
         const result = await response.json()
-
         if (result.success) {
-          alert('Pengguna berhasil diperbarui')
+          alert('Akses pengguna berhasil diperbarui')
           onSuccess()
         } else {
           setError(result.error || 'Gagal memperbarui pengguna')
         }
       }
     } catch (err: any) {
-      setError(err.message || 'Terjadi kesalahan')
+      setError('Terjadi kesalahan sistem: ' + err.message)
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      {/* flex-col + overflow yang ketat: header & footer tetap, body scroll */}
+      <div
+        className="bg-white rounded-lg shadow-lg w-full max-w-md flex flex-col"
+        style={{ maxHeight: 'min(92vh, 680px)' }}
+      >
+        {/* Header — tidak ikut scroll */}
+        <div className="flex-none px-6 py-4 flex justify-between items-center border-b border-gray-200">
+          <h2 className="text-base font-semibold text-gray-800">
             {user ? 'Edit Pengguna' : 'Tambah Pengguna Baru'}
           </h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            <X className="h-5 w-5" />
+          <button
+            onClick={onClose}
+            className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+          >
+            <X size={18} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {user && (
-            <>
-              <div>
-                <Label>Nama</Label>
-                <Input
-                  value={user.pegawai?.full_name || '-'}
-                  disabled
-                  className="bg-gray-50"
-                />
-              </div>
+        {/* Body — scrollable, min-h-0 wajib agar flex child bisa menyusut */}
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="px-6 py-5 space-y-4">
 
-              <div>
-                <Label>Email</Label>
-                <Input
-                  value={user.email}
-                  disabled
-                  className="bg-gray-50"
-                />
-              </div>
-            </>
-          )}
-
-          <div>
-            <Label htmlFor="role">Peran *</Label>
-            <select
-              id="role"
-              value={formData.role}
-              onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
-              className="w-full border rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            >
-              <option value="superadmin">{roleLabels.superadmin}</option>
-              <option value="unit_manager">{roleLabels.unit_manager}</option>
-            </select>
-            <p className="text-xs text-gray-500 mt-1">
-              Pilih peran untuk menentukan hak akses pengguna
-            </p>
-          </div>
-
-          {user && (
-            <div>
-              <Label htmlFor="unit_id">Unit *</Label>
-              <select
-                id="unit_id"
-                value={formData.unit_id}
-                onChange={(e) => setFormData({ ...formData, unit_id: e.target.value })}
-                className="w-full border rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-              >
-                <option value="">-- Pilih Unit --</option>
-                {unitList.map((unit) => (
-                  <option key={unit.id} value={unit.id}>
-                    {unit.name}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-gray-500 mt-1">
-                Pilih unit untuk pegawai ini
+            {/* Email info (edit mode) */}
+            {user && (
+              <p className="text-sm truncate">
+                <span className="font-medium text-gray-700">{user.email}</span>
               </p>
+            )}
+
+            {/* Peran */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-gray-700">
+                Peran <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <select
+                  value={formData.role}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value as any })}
+                  className="w-full h-10 bg-white border border-gray-300 rounded-md px-3 pr-8 text-sm text-gray-700 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  required
+                >
+                  <option value="superadmin">{roleLabels.superadmin}</option>
+                  <option value="unit_manager">{roleLabels.unit_manager}</option>
+                  <option value="employee">{roleLabels.employee}</option>
+                </select>
+                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
+              <p className="text-xs text-gray-400">Pilih peran untuk menentukan hak akses pengguna</p>
             </div>
-          )}
 
-          <div>
-            <Label htmlFor="password">{user ? 'Reset Password' : 'Password *'}</Label>
-            <Input
-              id="password"
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              required={!user}
-              placeholder={user ? "Biarkan kosong jika tidak ingin mengubah" : "Minimal 6 karakter"}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              {user
-                ? 'Isi hanya jika ingin mengubah password pengguna'
-                : 'Password ini akan digunakan untuk semua pegawai yang dipilih'}
-            </p>
-          </div>
+            {/* Password */}
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-gray-700">
+                Password {!user && <span className="text-red-500">*</span>}
+              </label>
+              <Input
+                type="password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                required={!user}
+                placeholder={user ? 'Kosongkan jika tidak ingin mengubah' : 'Minimal 6 karakter'}
+                className="h-10 border-gray-300 rounded-md text-sm placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+              {!user && (
+                <p className="text-xs text-gray-400">Password ini akan digunakan untuk semua pegawai yang dipilih</p>
+              )}
+            </div>
 
-          {!user && (
-            <>
-              <div>
-                <Label htmlFor="employee_ids">Pilih Pegawai *</Label>
-                <div className="border rounded-md p-3 max-h-60 overflow-y-auto space-y-2">
-                  {pegawaiList.length === 0 ? (
-                    <p className="text-sm text-gray-500">Tidak ada pegawai tersedia</p>
+            {/* Unit (edit mode only) */}
+            {user && (
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">Unit Penempatan</label>
+                <div className="relative">
+                  <select
+                    value={formData.unit_id}
+                    onChange={(e) => setFormData({ ...formData, unit_id: e.target.value })}
+                    className="w-full h-10 bg-white border border-gray-300 rounded-md px-3 pr-8 text-sm text-gray-700 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                  >
+                    <option value="">-- Pilih Unit --</option>
+                    {unitList.map((unit) => (
+                      <option key={unit.id} value={unit.id}>{unit.name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                </div>
+              </div>
+            )}
+
+            {/* Pilih Pegawai */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-gray-700">
+                Pilih Pegawai {!user && <span className="text-red-500">*</span>}
+              </label>
+
+              {/* Search + Unit filter */}
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    placeholder="Cari nama atau NIP..."
+                    value={pegawaiSearchTerm}
+                    onChange={(e) => setPegawaiSearchTerm(e.target.value)}
+                    className="h-9 pl-8 border-gray-300 rounded-md text-sm placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                <div className="relative">
+                  <select
+                    value={pegawaiUnitFilter}
+                    onChange={(e) => setPegawaiUnitFilter(e.target.value)}
+                    className="h-9 bg-white border border-gray-300 rounded-md px-3 pr-7 text-xs text-gray-600 appearance-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-w-[110px]"
+                  >
+                    <option value="all">Semua Unit</option>
+                    {unitList.map((unit) => (
+                      <option key={unit.id} value={unit.id}>{unit.name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Employee list — tinggi tetap agar tidak mendorong footer keluar */}
+              <div className="border border-gray-200 rounded-md overflow-hidden">
+                <div className="h-40 overflow-y-auto divide-y divide-gray-100">
+                  {filteredPegawai.length === 0 ? (
+                    <div className="h-full flex items-center justify-center">
+                      <p className="text-sm text-gray-400">Tidak ada pegawai tersedia</p>
+                    </div>
                   ) : (
-                    pegawaiList.map((pegawai) => {
+                    filteredPegawai.map((pegawai) => {
+                      const isSelected = formData.employee_ids.includes(pegawai.id)
                       const unit = unitList.find(u => u.id === pegawai.unit_id)
                       return (
                         <label
                           key={pegawai.id}
-                          className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded"
+                          className={cn(
+                            "flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors",
+                            isSelected ? "bg-blue-50" : "bg-white hover:bg-gray-50"
+                          )}
                         >
                           <input
-                            type="checkbox"
-                            checked={formData.employee_ids.includes(pegawai.id)}
+                            type={user ? 'radio' : 'checkbox'}
+                            checked={isSelected}
                             onChange={() => handleEmployeeToggle(pegawai.id)}
-                            className="h-4 w-4"
+                            className="w-4 h-4 accent-blue-600 flex-shrink-0"
                           />
-                          <span className="text-sm">
-                            {pegawai.employee_code} - {pegawai.full_name}
-                            {unit && <span className="text-gray-500"> ({unit.name})</span>}
-                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm text-gray-800 truncate">
+                              {pegawai.employee_code} - {pegawai.full_name}
+                              {unit && <span className="text-gray-500"> ({unit.name})</span>}
+                            </p>
+                          </div>
+                          {pegawai.user_id && !isSelected && (
+                            <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded flex-shrink-0">
+                              Punya akun
+                            </span>
+                          )}
                         </label>
                       )
                     })
                   )}
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Pilih satu atau lebih pegawai dengan peran yang sama
-                </p>
-                {formData.employee_ids.length > 0 && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    {formData.employee_ids.length} pegawai dipilih
-                  </p>
-                )}
               </div>
-            </>
-          )}
 
-          {error && (
-            <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
-              {error}
+              <p className="text-xs text-gray-400">
+                {user
+                  ? 'Pilih satu pegawai untuk dikaitkan dengan akun ini'
+                  : formData.employee_ids.length > 0
+                    ? `${formData.employee_ids.length} pegawai dipilih`
+                    : 'Pilih satu atau lebih pegawai dengan peran yang sama'
+                }
+              </p>
             </div>
-          )}
 
-          {tempPassword && (
-            <div className="p-3 text-sm text-green-600 bg-green-50 border border-green-200 rounded-md">
-              Password sementara: <strong>{tempPassword}</strong>
-              <br />
-              <small>Simpan password ini dan bagikan kepada pengguna.</small>
-            </div>
-          )}
+            {/* Error */}
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-600">
+                {error}
+              </div>
+            )}
 
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1">
-              Batal
-            </Button>
-            <Button type="submit" disabled={loading} className="flex-1">
-              {loading ? 'Menyimpan...' : user ? 'Perbarui' : 'Buat'}
-            </Button>
+            {/* Success */}
+            {tempPassword && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-md space-y-1">
+                <p className="text-xs font-medium text-green-700 flex items-center gap-1.5">
+                  <CheckCircle2 size={13} /> Akun berhasil dibuat
+                </p>
+                <p className="text-xs text-green-600">
+                  Kata sandi: <span className="font-semibold select-all">{tempPassword}</span>
+                </p>
+              </div>
+            )}
           </div>
-        </form>
+        </div>
+
+        {/* Footer — tidak ikut scroll, selalu terlihat */}
+        <div className="flex-none px-6 py-4 border-t border-gray-200 flex gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            className="flex-1 h-10 text-sm border-gray-300 text-gray-600 hover:bg-gray-50 rounded-md"
+          >
+            Batal
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="flex-1 h-10 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md shadow-none"
+          >
+            {loading ? 'Memproses...' : user ? 'Simpan' : 'Buat'}
+          </Button>
+        </div>
+
       </div>
     </div>
   )

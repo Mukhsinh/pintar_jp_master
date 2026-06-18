@@ -197,55 +197,41 @@ export async function middleware(request: NextRequest) {
     }
 
     if (!employeeData) {
-      // Get employee record first to get role and status
-      const { data: employee, error: employeeError } = await supabase
-        .from('m_employees')
-        .select('role, is_active')
-        .eq('user_id', session.user.id)
-        .limit(1)
-        .maybeSingle()
+      // 1. Check auth metadata first (it's the source of truth for superadmins)
+      const userMeta = session.user.user_metadata || {}
+      const appMeta = session.user.app_metadata || {}
 
-      if (employeeError || !employee) {
-        console.error('[MIDDLEWARE] Employee fetch error for:', session.user.email)
-        const loginUrl = new URL('/login', request.url)
-        loginUrl.searchParams.set('error', 'user_not_found')
+      const rawRole = (appMeta.role || userMeta.role || '').toString().toLowerCase()
+      const isAdmin = rawRole === 'superadmin' || rawRole === 'admin' || session.user.email === 'admin@goetengrs.com'
 
-        const redirectResponse = NextResponse.redirect(loginUrl)
-        const cookiesToClear = ['sb-access-token', 'sb-refresh-token', 'supabase-auth-token', 'sb-auth-token']
-        cookiesToClear.forEach(cookieName => {
-          redirectResponse.cookies.set(cookieName, '', { maxAge: 0, path: '/' })
-        })
+      if (isAdmin) {
+        employeeData = {
+          role: 'superadmin' as Role,
+          is_active: true
+        }
+        employeeCache.set(session.user.id, employeeData)
+      } else {
+        // 2. Fetch employee record for others
+        const { data: employee, error: employeeError } = await supabase
+          .from('m_employees')
+          .select('role, is_active')
+          .eq('user_id', session.user.id)
+          .limit(1)
+          .maybeSingle()
 
-        return redirectResponse
+        if (employeeError || !employee) {
+          console.error('[MIDDLEWARE] User not found in employees and no admin metadata:', session.user.email)
+          const loginUrl = new URL('/login', request.url)
+          loginUrl.searchParams.set('error', 'user_not_found')
+          return NextResponse.redirect(loginUrl)
+        }
+
+        employeeData = {
+          role: (employee.role || 'employee') as Role,
+          is_active: !!employee.is_active
+        }
+        employeeCache.set(session.user.id, employeeData)
       }
-
-      // Get role from employee data (primary source) or fallback to metadata
-      const metadataRole = session.user.user_metadata?.role
-      // If auth metadata has a different role than m_employees, prefer metadata role
-      // (metadata is the source of truth for role changes made via the admin UI)
-      // The actual DB sync happens via /api/users/sync-role called during login
-      let role = metadataRole || employee.role
-
-      if (!role) {
-        console.error('[MIDDLEWARE] Role not found for user:', session.user.email)
-        const loginUrl = new URL('/login', request.url)
-        loginUrl.searchParams.set('error', 'user_not_found')
-
-        const redirectResponse = NextResponse.redirect(loginUrl)
-        const cookiesToClear = ['sb-access-token', 'sb-refresh-token', 'supabase-auth-token', 'sb-auth-token']
-        cookiesToClear.forEach(cookieName => {
-          redirectResponse.cookies.set(cookieName, '', { maxAge: 0, path: '/' })
-        })
-
-        return redirectResponse
-      }
-
-      // Cache the employee data
-      employeeData = {
-        role: role as Role,
-        is_active: employee.is_active
-      }
-      employeeCache.set(session.user.id, employeeData)
     }
 
     // 6. Check if employee is active
@@ -263,7 +249,8 @@ export async function middleware(request: NextRequest) {
     }
 
     // 7. Check route authorization
-    if (!isRouteAllowed(pathname, employeeData.role)) {
+    // Superadmins can bypass route checks (they have full access)
+    if (employeeData.role !== 'superadmin' && !isRouteAllowed(pathname, employeeData.role)) {
       const forbiddenUrl = new URL('/forbidden', request.url)
       return NextResponse.redirect(forbiddenUrl)
     }

@@ -22,30 +22,35 @@ interface Assessment {
  * Find employee record for authenticated user.
  * Tries user_id first, then falls back to email match.
  */
-async function findEmployeeForUser(adminClient: any, userId: string, userEmail: string) {
-  // Try by user_id first
-  const { data: byUserId } = await adminClient
+async function findEmployeeForUser(adminClient: any, userId: string, authUser: any) {
+  // 1. Check if user is superadmin via Auth Metadata or Email
+  const userMeta = authUser.user_metadata || {}
+  const appMeta = authUser.app_metadata || {}
+  const rawRole = (appMeta.role || userMeta.role || '').toString().toLowerCase()
+  const isSuperAdmin = rawRole === 'superadmin' || rawRole === 'admin' || authUser.email === 'admin@goetengrs.com'
+
+  // 2. Try by user_id first
+  const { data: employeeData } = await adminClient
     .from('m_employees')
     .select('id, role, unit_id')
     .eq('user_id', userId)
     .maybeSingle()
 
-  if (byUserId) return byUserId
+  if (employeeData) {
+    // If found and user is superadmin but record says otherwise, override for consistency
+    if (isSuperAdmin) {
+      employeeData.role = 'superadmin'
+    }
+    return employeeData
+  }
 
-  // Fallback: try by email
-  const { data: byEmail } = await adminClient
-    .from('m_employees')
-    .select('id, role, unit_id')
-    .eq('email', userEmail)
-    .maybeSingle()
-
-  if (byEmail) {
-    // Auto-link user_id for future lookups
-    await adminClient
-      .from('m_employees')
-      .update({ user_id: userId })
-      .eq('id', byEmail.id)
-    return byEmail
+  // 3. Fallback for Superadmins: return virtual employee record
+  if (isSuperAdmin) {
+    return {
+      id: 'superadmin-virtual',
+      role: 'superadmin',
+      unit_id: '0'
+    }
   }
 
   return null
@@ -96,58 +101,45 @@ async function upsertAssessment(adminClient: any, assessment: Assessment): Promi
     ? assessment.score
     : (achievement * assessment.weight_percentage) / 100
 
-  const assessmentData = {
+  // 1. Prepare Main Assessment Data
+  const assessmentData: any = {
     employee_id: assessment.employee_id,
     indicator_id: assessment.indicator_id,
+    sub_indicator_id: null,
     period: assessment.period,
     realization_value: assessment.realization_value,
     target_value: assessment.target_value,
     weight_percentage: assessment.weight_percentage,
+    achievement_percentage: achievement,
+    score: score,
     notes: assessment.notes,
-    assessor_id: assessment.assessor_id
+    assessor_id: assessment.assessor_id,
+    updated_at: new Date().toISOString()
   }
 
-  const { data: existing } = await adminClient
+  // Include ID if present to ensure reliable update of existing records
+  if (assessment.id) {
+    assessmentData.id = assessment.id
+  }
+
+  // 2. Upsert the main indicator assessment
+  const { data: savedData, error: upsertError } = await adminClient
     .from('t_kpi_assessments')
-    .select('id')
-    .eq('employee_id', assessment.employee_id)
-    .eq('indicator_id', assessment.indicator_id)
-    .eq('period', assessment.period)
-    .maybeSingle()
+    .upsert(assessmentData, {
+      onConflict: assessment.id ? 'id' : 'employee_id,indicator_id,period,sub_indicator_id'
+    })
+    .select()
+    .single()
 
-  let result
-  let operation: 'CREATE' | 'UPDATE' = 'CREATE'
-
-  if (existing) {
-    operation = 'UPDATE'
-    const { data, error } = await adminClient
-      .from('t_kpi_assessments')
-      .update(assessmentData)
-      .eq('id', existing.id)
-      .select()
-      .single()
-
-    if (error) {
-      throw new Error(`Failed to update assessment: ${error.message}`)
-    }
-    result = data
-  } else {
-    const { data, error } = await adminClient
-      .from('t_kpi_assessments')
-      .insert(assessmentData)
-      .select()
-      .single()
-
-    if (error) {
-      throw new Error(`Failed to create assessment: ${error.message}`)
-    }
-    result = data
+  if (upsertError) {
+    console.error('Main assessment upsert error:', upsertError)
+    throw new Error(`Failed to save assessment: ${upsertError.message}`)
   }
 
-  // Handle Sub-Assessments if provided
+  // 3. Handle Sub-Assessments if provided
   if (assessment.sub_assessments && Array.isArray(assessment.sub_assessments)) {
-    for (const sub of assessment.sub_assessments) {
-      const subData = {
+    const subAssessmentsToUpsert = assessment.sub_assessments.map(sub => {
+      const subData: any = {
         employee_id: assessment.employee_id,
         indicator_id: assessment.indicator_id,
         sub_indicator_id: sub.sub_indicator_id,
@@ -157,28 +149,57 @@ async function upsertAssessment(adminClient: any, assessment: Assessment): Promi
         weight_percentage: 0,
         score: sub.score || 0,
         notes: sub.notes || '',
-        assessor_id: assessment.assessor_id
+        assessor_id: assessment.assessor_id,
+        updated_at: new Date().toISOString()
       }
 
-      // Check if sub-indicator assessment exists
-      const { data: subExisting } = await adminClient
+      if (sub.id) {
+        subData.id = sub.id
+      }
+
+      return subData
+    })
+
+    if (subAssessmentsToUpsert.length > 0) {
+      const { error: subUpsertError } = await adminClient
         .from('t_kpi_assessments')
-        .select('id')
+        .upsert(subAssessmentsToUpsert, {
+          onConflict: 'employee_id,indicator_id,period,sub_indicator_id'
+        })
+
+      if (subUpsertError) {
+        console.error('Sub-assessments upsert error:', subUpsertError)
+        throw new Error(`Failed to save sub-indicators: ${subUpsertError.message}`)
+      }
+
+      // 4. Sync main row score = sum of sub-assessment scores
+      //    This ensures report calculations always use the correct value
+      const aggregateScore = subAssessmentsToUpsert.reduce((sum, s) => sum + (s.score || 0), 0)
+      const aggregateRealization = subAssessmentsToUpsert.reduce((sum, s) => sum + (s.realization_value || 0), 0)
+
+      const { error: syncError } = await adminClient
+        .from('t_kpi_assessments')
+        .update({
+          score: aggregateScore,
+          realization_value: aggregateRealization,
+          updated_at: new Date().toISOString()
+        })
         .eq('employee_id', assessment.employee_id)
         .eq('indicator_id', assessment.indicator_id)
-        .eq('sub_indicator_id', sub.sub_indicator_id)
         .eq('period', assessment.period)
-        .maybeSingle()
+        .is('sub_indicator_id', null)
 
-      if (subExisting) {
-        await adminClient.from('t_kpi_assessments').update(subData).eq('id', subExisting.id)
+      if (syncError) {
+        console.error('Main row score sync error:', syncError)
+        // Non-fatal: sub-assessments saved, main row sync failed
       } else {
-        await adminClient.from('t_kpi_assessments').insert(subData)
+        savedData.score = aggregateScore
+        savedData.realization_value = aggregateRealization
       }
     }
   }
 
-  return result
+  return savedData
 }
 
 export async function GET(request: NextRequest) {
@@ -203,6 +224,29 @@ export async function GET(request: NextRequest) {
     }
 
     const adminClient = await createAdminClient()
+
+    // Find current user's role and unit
+    const currentEmployee = await findEmployeeForUser(adminClient, user.id, user)
+    if (!currentEmployee) {
+      return NextResponse.json({ error: 'Employee record not found' }, { status: 404 })
+    }
+
+    // Enforce unit isolation for unit managers
+    if (currentEmployee.role === 'unit_manager') {
+      const { data: targetEmployee } = await adminClient
+        .from('m_employees')
+        .select('unit_id')
+        .eq('id', employeeId)
+        .single()
+
+      if (!targetEmployee || targetEmployee.unit_id !== currentEmployee.unit_id) {
+        return NextResponse.json(
+          { error: 'You can only view assessments for employees in your unit' },
+          { status: 403 }
+        )
+      }
+    }
+
     const assessments = await getAssessmentsForEmployee(adminClient, employeeId, period)
 
     return NextResponse.json({ assessments })
@@ -227,7 +271,7 @@ export async function POST(request: NextRequest) {
 
     // Use admin client to bypass RLS for employee lookup
     const adminClient = await createAdminClient()
-    const currentEmployee = await findEmployeeForUser(adminClient, user.id, user.email || '')
+    const currentEmployee = await findEmployeeForUser(adminClient, user.id, user)
 
     if (!currentEmployee) {
       console.error('Employee not found for user:', user.email, user.id)
@@ -243,6 +287,35 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
+
+    // Batch processing support
+    if (Array.isArray(body)) {
+      const results = []
+      for (const item of body) {
+        const assessmentItem: Assessment = {
+          ...item,
+          assessor_id: currentEmployee.id
+        }
+
+        // Basic authorization for each item if manager
+        if (currentEmployee.role === 'unit_manager') {
+          const { data: targetEmployee } = await adminClient
+            .from('m_employees')
+            .select('unit_id')
+            .eq('id', assessmentItem.employee_id)
+            .single()
+
+          if (!targetEmployee || targetEmployee.unit_id !== currentEmployee.unit_id) {
+            continue // Skip unauthorized items
+          }
+        }
+
+        const saved = await upsertAssessment(adminClient, assessmentItem)
+        results.push(saved)
+      }
+      return NextResponse.json({ assessments: results })
+    }
+
     const assessment: Assessment = {
       ...body,
       assessor_id: currentEmployee.id
@@ -288,7 +361,7 @@ export async function PUT(request: NextRequest) {
 
     // Use admin client to bypass RLS for employee lookup
     const adminClient = await createAdminClient()
-    const currentEmployee = await findEmployeeForUser(adminClient, user.id, user.email || '')
+    const currentEmployee = await findEmployeeForUser(adminClient, user.id, user)
 
     if (!currentEmployee) {
       console.error('Employee not found for user:', user.email, user.id)
