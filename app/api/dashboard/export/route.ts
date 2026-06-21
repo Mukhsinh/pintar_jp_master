@@ -18,10 +18,16 @@ export async function POST(request: NextRequest) {
             .from('m_employees')
             .select('role, unit_id')
             .eq('user_id', user.id)
-            .single()
+            .maybeSingle()
 
         if (!employee) {
             return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+        }
+
+        const isSuperAdmin = user.app_metadata?.role === 'superadmin' || user.email === 'admin@goetengrs.com'
+
+        if (!employee.role && isSuperAdmin) {
+            employee.role = 'superadmin'
         }
 
         const effectiveUnitId = employee.role === 'unit_manager' ? employee.unit_id : (unitId === 'all' ? undefined : unitId)
@@ -35,7 +41,7 @@ export async function POST(request: NextRequest) {
             kpiDistribution,
             unitPerformance
         ] = await Promise.all([
-            DashboardService.getSuperadminStats(effectiveUnitId, period, year),
+            DashboardService.getDashboardStats(effectiveUnitId, period, year),
             DashboardService.getTopPerformers(10, effectiveUnitId, period, year),
             DashboardService.getWorstPerformers(10, effectiveUnitId, period, year),
             DashboardService.getPerformanceTrend(6, effectiveUnitId, period, year),

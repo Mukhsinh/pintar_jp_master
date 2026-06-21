@@ -70,8 +70,8 @@ export async function DashboardContent({
       }
     }
 
-    // Force role override if auth metadata says superadmin
-    if (isSuperAdmin && employee) {
+    // Use database role if defined, otherwise fallback to Auth metadata for superadmin detection
+    if (employee && !employee.role && isSuperAdmin) {
       employee.role = 'superadmin'
       if (!employee.full_name) employee.full_name = 'Super Administrator'
     }
@@ -109,7 +109,7 @@ export async function DashboardContent({
           performanceTrendData,
           kpiDistributionData,
         ] = await Promise.allSettled([
-          DashboardService.getSuperadminStats(effectiveUnitId, period, year),
+          DashboardService.getDashboardStats(effectiveUnitId, period, year),
           DashboardService.getTopPerformers(5, effectiveUnitId, period, year),
           DashboardService.getWorstPerformers(5, effectiveUnitId, period, year),
           DashboardService.getPerformanceTrend(6, effectiveUnitId, period, year),
@@ -117,7 +117,7 @@ export async function DashboardContent({
         ])
 
         // Process results with fallbacks
-        stats = dashboardStats.status === 'fulfilled' ? dashboardStats.value : await DashboardService.getSuperadminStats(effectiveUnitId, period, year)
+        stats = dashboardStats.status === 'fulfilled' ? dashboardStats.value : await DashboardService.getDashboardStats(effectiveUnitId, period, year)
         topPerformers = topPerformersData.status === 'fulfilled' ? topPerformersData.value : []
         worstPerformers = worstPerformersData.status === 'fulfilled' ? worstPerformersData.value : []
         performanceTrend = performanceTrendData.status === 'fulfilled' ? performanceTrendData.value : []

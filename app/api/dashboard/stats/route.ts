@@ -25,16 +25,16 @@ export async function GET(request: Request) {
     const authRole = user.app_metadata?.role || user.user_metadata?.role
     const isSuperAdmin = authRole === 'superadmin' || user.email === 'admin@goetengrs.com'
 
-    if (!employee) {
-      if (isSuperAdmin) {
-        employee = { role: 'superadmin', unit_id: '0' } as any
-      } else {
-        return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
-      }
+    if (!employee && isSuperAdmin) {
+      employee = { role: 'superadmin', unit_id: '0' } as any
     }
 
-    // Force role override if auth metadata says superadmin
-    if (isSuperAdmin && employee) {
+    if (!employee) {
+      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+    }
+
+    // Use database role if defined, otherwise fallback to Auth metadata for superadmin detection
+    if (!employee.role && isSuperAdmin) {
       employee.role = 'superadmin'
     }
 
@@ -63,7 +63,7 @@ export async function GET(request: Request) {
           stats.totalIndicators = statsData.total_indicators || 0
         } else {
           // Fallback to individual queries if RPC fails
-          const dashboardStats = await DashboardService.getSuperadminStats()
+          const dashboardStats = await DashboardService.getDashboardStats()
 
           stats.totalUnits = dashboardStats.totalUnits
           stats.totalEmployees = dashboardStats.totalEmployees

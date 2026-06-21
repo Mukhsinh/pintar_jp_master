@@ -32,8 +32,11 @@ export interface UnitPerformance {
 }
 
 export interface PerformanceTrend {
-  period: string
-  score: number
+  month: string
+  p1: number
+  p2: number
+  p3: number
+  total: number
 }
 
 export interface KPIDistribution {
@@ -45,14 +48,101 @@ export interface KPIDistribution {
 export class DashboardService {
   /**
    * Helper to get resolved periods (current and previous)
+   * When defaulting to current month but no data exists, falls back to latest available period
    */
   private static async getResolvedPeriods(supabase: SupabaseClient, period?: string, year?: string): Promise<string[]> {
-    if (period) {
-      return [period];
+    const currentYear = year || new Date().getFullYear().toString()
+
+    // Default to current month if no period specified or if "month" is selected
+    if (!period || period === 'month' || period === 'all') {
+      const current = new Date()
+      const currentPeriod = `${currentYear}-${String(current.getMonth() + 1).padStart(2, '0')}`
+
+      // Check if data exists for current month
+      const { count } = await supabase
+        .from('t_kpi_assessments')
+        .select('id', { count: 'exact', head: true })
+        .eq('period', currentPeriod)
+
+      if (count && count > 0) {
+        return [currentPeriod]
+      }
+
+      // Fall back to the latest period that has data
+      const { data: latestPeriod } = await supabase
+        .from('t_kpi_assessments')
+        .select('period')
+        .like('period', `${currentYear}-%`)
+        .order('period', { ascending: false })
+        .limit(1)
+
+      if (latestPeriod && latestPeriod.length > 0) {
+        return [latestPeriod[0].period]
+      }
+
+      // If no data in current year at all, try previous year
+      const prevYear = (parseInt(currentYear) - 1).toString()
+      const { data: prevYearPeriod } = await supabase
+        .from('t_kpi_assessments')
+        .select('period')
+        .like('period', `${prevYear}-%`)
+        .order('period', { ascending: false })
+        .limit(1)
+
+      if (prevYearPeriod && prevYearPeriod.length > 0) {
+        return [prevYearPeriod[0].period]
+      }
+
+      return [currentPeriod] // Fallback to current month if no data anywhere
     }
-    const current = new Date();
-    const currentPeriod = `${year || current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`;
-    return [currentPeriod];
+
+    // Handle Month format (M-01, M-02, etc.)
+    if (period.startsWith('M-')) {
+      const monthPart = period.split('-')[1]
+      return [`${currentYear}-${monthPart}`]
+    }
+
+    // Handle Quarter format (Q-1, Q-2, etc.)
+    if (period.startsWith('Q-')) {
+      const q = parseInt(period.split('-')[1])
+      const startMonth = (q - 1) * 3 + 1
+      return [
+        `${currentYear}-${String(startMonth).padStart(2, '0')}`,
+        `${currentYear}-${String(startMonth + 1).padStart(2, '0')}`,
+        `${currentYear}-${String(startMonth + 2).padStart(2, '0')}`
+      ]
+    }
+
+    // Handle Semester format (S-1, S-2)
+    if (period.startsWith('S-')) {
+      const s = parseInt(period.split('-')[1])
+      const startMonth = (s - 1) * 6 + 1
+      return Array.from({ length: 6 }, (_, i) =>
+        `${currentYear}-${String(startMonth + i).padStart(2, '0')}`
+      )
+    }
+
+    // Handle full-year
+    if (period === 'full-year') {
+      return Array.from({ length: 12 }, (_, i) =>
+        `${currentYear}-${String(i + 1).padStart(2, '0')}`
+      )
+    }
+
+    return [period];
+  }
+
+  /**
+   * Helper to get the latest available period for trend calculations
+   */
+  private static async getLatestAvailablePeriod(supabase: SupabaseClient): Promise<string | null> {
+    const { data } = await supabase
+      .from('t_kpi_assessments')
+      .select('period')
+      .order('period', { ascending: false })
+      .limit(1)
+
+    return data && data.length > 0 ? data[0].period : null
   }
 
   /**
@@ -112,9 +202,50 @@ export class DashboardService {
   }
 
   /**
-   * Get dashboard statistics for superadmin - using direct queries
+   * Helper to calculate aggregate scores by category for a set of assessments
    */
-  static async getSuperadminStats(unitId?: string, period?: string, year?: string): Promise<DashboardStats> {
+  private static calculateCategoryScores(empMap: Map<string, { [key: string]: any[] }>) {
+    let p1Sum = 0, p2Sum = 0, p3Sum = 0
+    let empCount = 0
+
+    const calcCat = (cats: { [key: string]: any[] }, catName: string) => {
+      const catAss = cats[catName]
+      if (!catAss || catAss.length === 0) return 0
+
+      const first = catAss[0]
+      const indicator = (Array.isArray(first.m_kpi_indicators) ? first.m_kpi_indicators[0] : first.m_kpi_indicators) as any;
+      const categoryObj = indicator?.m_kpi_categories as any;
+      const catWeight = parseFloat(Array.isArray(categoryObj) ? categoryObj[0]?.weight_percentage : categoryObj?.weight_percentage) || 0;
+
+      let totalR = 0, totalT = 0
+      for (const a of catAss) {
+        const w = parseFloat(a.weight_percentage) || 0
+        totalR += (parseFloat(a.realization_value) || 0) * (w / 100)
+        totalT += (parseFloat(a.target_value) || 100) * (w / 100)
+      }
+      return totalT > 0 ? (totalR / totalT) * catWeight : 0
+    }
+
+    for (const cats of empMap.values()) {
+      p1Sum += calcCat(cats, 'P1')
+      p2Sum += calcCat(cats, 'P2')
+      p3Sum += calcCat(cats, 'P3')
+      empCount++
+    }
+
+    return {
+      p1: empCount > 0 ? Math.round((p1Sum / empCount) * 100) / 100 : 0,
+      p2: empCount > 0 ? Math.round((p2Sum / empCount) * 100) / 100 : 0,
+      p3: empCount > 0 ? Math.round((p3Sum / empCount) * 100) / 100 : 0,
+      total: empCount > 0 ? Math.round(((p1Sum + p2Sum + p3Sum) / empCount) * 100) / 100 : 0,
+      count: empCount
+    }
+  }
+
+  /**
+   * Get dashboard statistics - using direct queries
+   */
+  static async getDashboardStats(unitId?: string, period?: string, year?: string): Promise<DashboardStats> {
     const supabase = await createAdminClient()
 
     try {
@@ -163,7 +294,7 @@ export class DashboardService {
       ]);
 
       const totalDisplayEmployees = empDisplayRes.count || 0;
-      const totalUnits = totalUnitsRes.count || 0;
+      const totalUnits = (unitId && unitId !== 'all') ? 1 : (totalUnitsRes.count || 0);
 
       const { data: assessments, error: assError } = await assQuery
       if (assError) throw assError
@@ -466,11 +597,24 @@ export class DashboardService {
     const supabase = await createAdminClient()
 
     try {
+      // Get the latest available period to anchor the trend chart
+      const latestPeriod = await this.getLatestAvailablePeriod(supabase)
+
       const periods: string[] = []
-      const current = new Date()
-      for (let i = 0; i < months; i++) {
-        const d = new Date(current.getFullYear(), current.getMonth() - i, 1)
-        periods.unshift(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+      if (latestPeriod) {
+        // Parse the latest period and go backward from there
+        const [latestYear, latestMonth] = latestPeriod.split('-').map(Number)
+        for (let i = 0; i < months; i++) {
+          const d = new Date(latestYear, latestMonth - 1 - i, 1)
+          periods.unshift(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+        }
+      } else {
+        // Fallback to current date if no data exists
+        const current = new Date()
+        for (let i = 0; i < months; i++) {
+          const d = new Date(current.getFullYear(), current.getMonth() - i, 1)
+          periods.unshift(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+        }
       }
 
       let q = supabase
@@ -500,17 +644,18 @@ export class DashboardService {
       const { data: assessments, error } = await q
       if (error) throw error
 
-      // Group by period then employee
+      // Group by period then calculate scores
       return periods.map(p => {
         const pAss = (assessments || []).filter(a => a.period === p)
         const empMap = this.groupAssessmentsByEmployee(pAss)
-
-        const scores = Array.from(empMap.values()).map(cats => this.calculateScoreFromGroupedData(cats))
-        const avg = scores.length > 0 ? scores.reduce((s, score) => s + score, 0) / scores.length : 0
+        const scores = this.calculateCategoryScores(empMap)
 
         return {
-          period: p,
-          score: Math.round(avg * 100) / 100
+          month: p,
+          p1: scores.p1,
+          p2: scores.p2,
+          p3: scores.p3,
+          total: scores.total
         }
       })
     } catch (error: any) {
@@ -552,38 +697,12 @@ export class DashboardService {
       if (error) throw error
 
       const empMap = this.groupAssessmentsByEmployee(assessments || [])
-      let p1Sum = 0, p2Sum = 0, p3Sum = 0
-      let empCount = 0
-
-      for (const cats of empMap.values()) {
-        const calcCat = (catName: string) => {
-          const catAss = cats[catName]
-          if (!catAss || catAss.length === 0) return 0
-
-          const first = catAss[0]
-          const indicator = (Array.isArray(first.m_kpi_indicators) ? first.m_kpi_indicators[0] : first.m_kpi_indicators) as any;
-          const categoryObj = indicator?.m_kpi_categories as any;
-          const catWeight = parseFloat(Array.isArray(categoryObj) ? categoryObj[0]?.weight_percentage : categoryObj?.weight_percentage) || 0;
-
-          let totalR = 0, totalT = 0
-          for (const a of catAss) {
-            const w = parseFloat(a.weight_percentage) || 0
-            totalR += (parseFloat(a.realization_value) || 0) * (w / 100)
-            totalT += (parseFloat(a.target_value) || 100) * (w / 100)
-          }
-          return totalT > 0 ? (totalR / totalT) * catWeight : 0
-        }
-
-        p1Sum += calcCat('P1')
-        p2Sum += calcCat('P2')
-        p3Sum += calcCat('P3')
-        empCount++
-      }
+      const scores = this.calculateCategoryScores(empMap)
 
       return [
-        { name: 'P1 (Posisi)', value: empCount > 0 ? Math.round(p1Sum / empCount) : 0, color: '#3b82f6' },
-        { name: 'P2 (Kinerja)', value: empCount > 0 ? Math.round(p2Sum / empCount) : 0, color: '#10b981' },
-        { name: 'P3 (Potensi)', value: empCount > 0 ? Math.round(p3Sum / empCount) : 0, color: '#f59e0b' }
+        { name: 'P1 (Posisi)', value: scores.p1, color: '#3b82f6' },
+        { name: 'P2 (Kinerja)', value: scores.p2, color: '#10b981' },
+        { name: 'P3 (Potensi)', value: scores.p3, color: '#f59e0b' }
       ]
     } catch (error: any) {
       console.error('Error in getKPIDistribution:', error?.message || error)
