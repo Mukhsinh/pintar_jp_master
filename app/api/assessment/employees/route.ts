@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     // Use admin client to bypass RLS for employee lookup
     const adminClient = await createAdminClient()
 
-    // Try by user_id first, then fallback to email
+    // Try by user_id first
     let currentEmployee: any = null
     const { data: byUserId } = await adminClient
       .from('m_employees')
@@ -38,24 +38,9 @@ export async function GET(request: NextRequest) {
     if (byUserId) {
       currentEmployee = byUserId
     } else {
-      const { data: byEmail } = await adminClient
-        .from('m_employees')
-        .select('id, role, unit_id, full_name')
-        .eq('email', user.email)
-        .maybeSingle()
+      // NOTE: Fallback by email is disabled because m_employees lacks an email column
+      // If we ever add an email column to m_employees, we can re-enable this with case-insensitive matching
 
-      if (byEmail) {
-        currentEmployee = byEmail
-        // Auto-link user_id for future lookups
-        await adminClient
-          .from('m_employees')
-          .update({ user_id: user.id })
-          .eq('id', byEmail.id)
-      }
-    }
-
-    if (!currentEmployee) {
-      // Fallback for superadmin without m_employees record
       const appRole = user.app_metadata?.role
       const userRole = user.user_metadata?.role
       const email = user.email
@@ -73,12 +58,12 @@ export async function GET(request: NextRequest) {
           unit_id: '0'
         }
       } else {
-        console.error('No employee record found for user:', user.id, user.email)
-        return NextResponse.json({ error: 'Employee record not found' }, { status: 404 })
+        console.error('No employee record linked to user id:', user.id)
+        return NextResponse.json({ error: 'Employee record not found. Please contact admin to link your account.' }, { status: 404 })
       }
     }
 
-    console.log('Current employee:', currentEmployee.full_name, 'Role:', currentEmployee.role)
+    console.log('API Assessment: Identified user as:', currentEmployee.full_name, 'with role:', currentEmployee.role)
 
     const { searchParams } = new URL(request.url)
     const period = searchParams.get('period')
@@ -94,7 +79,13 @@ export async function GET(request: NextRequest) {
       .select('*')
       .eq('period', period)
 
+    // STUCT UNIT ISOLATION: 
+    // Always filter by unit_id if the user is a unit_manager, 
+    // even if they have superadmin metadata in Auth (m_employees record takes precedence).
     if (currentEmployee.role === 'unit_manager') {
+      if (!currentEmployee.unit_id) {
+        return NextResponse.json({ error: 'Unit ID not found for manager profile' }, { status: 403 })
+      }
       statusQuery = statusQuery.eq('unit_id', currentEmployee.unit_id)
     }
 
@@ -104,15 +95,26 @@ export async function GET(request: NextRequest) {
 
     const { data: rawEmployees, error: statusError } = await statusQuery.order('full_name')
 
-    // Filter out superadmins in memory as a fallback for views without the role column
-    const employees = (rawEmployees || []).filter((emp: any) => emp.role !== 'superadmin')
-
     if (statusError) {
       console.error('View fetch error:', statusError)
       return NextResponse.json({ error: statusError.message }, { status: 500 })
     }
 
-    return NextResponse.json({ employees: employees || [] })
+    // Secondary filter: Ensure superadmins are not in the list for unit managers
+    // and that the unit isolation held (double check)
+    const filteredResults = (rawEmployees || []).filter((emp: any) => {
+      // Hide superadmins
+      if (emp.role === 'superadmin') return false
+
+      // Double check unit isolation for unit managers
+      if (currentEmployee.role === 'unit_manager' && emp.unit_id !== currentEmployee.unit_id) {
+        return false
+      }
+
+      return true
+    })
+
+    return NextResponse.json({ employees: filteredResults })
   } catch (error) {
     console.error('Assessment employees GET error:', error)
     return NextResponse.json(

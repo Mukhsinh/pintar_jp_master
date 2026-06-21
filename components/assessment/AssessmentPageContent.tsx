@@ -36,6 +36,9 @@ export default function AssessmentPageContent({
   const [searchTerm, setSearchTerm] = useState('')
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [unitFilter, setUnitFilter] = useState<string>(
+    currentEmployee.role === 'unit_manager' ? currentEmployee.unit_id : 'all'
+  )
   const [isAddPeriodDialogOpen, setIsAddPeriodDialogOpen] = useState(false)
   const [summary, setSummary] = useState({
     total_employees: 0,
@@ -132,17 +135,17 @@ export default function AssessmentPageContent({
       )
     }
 
-    // Apply status filter
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(emp => emp.status === statusFilter)
+    // Apply unit filter (additional safety for unit managers)
+    if (unitFilter && unitFilter !== 'all') {
+      filtered = filtered.filter(emp => emp.unit_id === unitFilter)
     }
 
     setFilteredEmployees(filtered)
-  }, [employees, debouncedSearchTerm, statusFilter])
+  }, [employees, debouncedSearchTerm, statusFilter, unitFilter])
 
   // Load data when period changes
   useEffect(() => {
-    if (selectedPeriod) {
+    if (selectedPeriod && selectedPeriod !== 'null' && selectedPeriod !== 'undefined') {
       loadEmployees()
       loadSummary()
     }

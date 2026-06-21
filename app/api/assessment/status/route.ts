@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
     // Get current user's employee record
     let { data: currentEmployee } = await fetchClient
       .from('m_employees')
-      .select('id, role, unit_id')
+      .select('id, role, unit_id, full_name')
       .eq('user_id', user.id)
       .maybeSingle()
 
@@ -129,18 +129,21 @@ export async function GET(request: NextRequest) {
       if (isSuperAdmin) {
         currentEmployee = {
           id: user.id,
+          full_name: 'Super Administrator',
           role: 'superadmin',
           unit_id: '0'
         }
       } else {
-        return NextResponse.json({ error: 'Employee record not found' }, { status: 404 })
+        return NextResponse.json({ error: 'Employee record not found. Please contact admin to link your account.' }, { status: 404 })
       }
     }
 
-    // Ensure role is superadmin if identity matches
-    if (isSuperAdmin) {
-      currentEmployee.role = 'superadmin'
-    }
+    // STRICT ROLE OVERRIDE: 
+    // If the database says they are a unit_manager, we MUST respect that role
+    // even if Auth metadata says superadmin, for proper unit isolation.
+    // However, if database role is not defined but Auth metadata says superadmin, use that.
+    const effectiveRole = currentEmployee.role || (isSuperAdmin ? 'superadmin' : 'employee')
+    const effectiveUnitId = currentEmployee.unit_id
 
     const { searchParams } = new URL(request.url)
     const employeeId = searchParams.get('employee_id')
@@ -152,14 +155,14 @@ export async function GET(request: NextRequest) {
 
     if (employeeId) {
       // Authorization check for unit managers
-      if (currentEmployee.role === 'unit_manager') {
+      if (effectiveRole === 'unit_manager') {
         const { data: targetEmployee } = await supabase
           .from('m_employees')
           .select('unit_id')
           .eq('id', employeeId)
           .single()
 
-        if (!targetEmployee || targetEmployee.unit_id !== currentEmployee.unit_id) {
+        if (!targetEmployee || targetEmployee.unit_id !== effectiveUnitId) {
           return NextResponse.json(
             { error: 'You can only view status for employees in your unit' },
             { status: 403 }
@@ -168,7 +171,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Get status for specific employee
-      const statuses = await getAssessmentStatus(fetchClient, currentEmployee.role === 'unit_manager' ? currentEmployee.unit_id : null, period)
+      const statuses = await getAssessmentStatus(fetchClient, effectiveRole === 'unit_manager' ? effectiveUnitId : null, period)
       const employeeStatus = statuses.find(s => s.employee_id === employeeId)
 
       if (!employeeStatus) {
@@ -178,8 +181,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ status: employeeStatus })
     } else {
       // Get status for all employees based on role
-      const unitId = currentEmployee.role === 'unit_manager' ? currentEmployee.unit_id : null
-      const statuses = await getAssessmentStatus(fetchClient, unitId, period)
+      const unitIdFilter = effectiveRole === 'unit_manager' ? effectiveUnitId : null
+      const statuses = await getAssessmentStatus(fetchClient, unitIdFilter, period)
 
       // Calculate summary statistics
       const summary = {

@@ -68,8 +68,8 @@ export default async function AssessmentPage() {
       }
     }
 
-    // Force role override if auth metadata says superadmin
-    if (isSuperAdmin && currentEmployee) {
+    // Use database role if defined, otherwise fallback to Auth metadata for superadmin detection
+    if (!currentEmployee.role && isSuperAdmin) {
       currentEmployee.role = 'superadmin'
     }
 
