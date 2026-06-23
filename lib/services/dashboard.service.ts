@@ -149,6 +149,9 @@ export class DashboardService {
    * Shared helper to calculate performance score using the standard formula
    * Standard Formula: Sum of ((Sum of Ind_Realisasi * Ind_Weight/100) / (Sum of Ind_Target * Ind_Weight/100)) * Cat_Weight
    */
+  /**
+   * Refined score calculation with fallback for unweighted categories
+   */
   private static calculateScoreFromGroupedData(cats: { [key: string]: any[] }): number {
     let totalScore = 0;
     const catNames = ['P1', 'P2', 'P3'];
@@ -160,19 +163,38 @@ export class DashboardService {
       const firstAss = catAssessments[0];
       const indicator = (Array.isArray(firstAss.m_kpi_indicators) ? firstAss.m_kpi_indicators[0] : firstAss.m_kpi_indicators) as any;
       const categoryObj = indicator?.m_kpi_categories as any;
+
       const categoryWeight = parseFloat(Array.isArray(categoryObj) ? categoryObj[0]?.weight_percentage : categoryObj?.weight_percentage) || 0;
+      const isWeighted = Array.isArray(categoryObj) ? categoryObj[0]?.is_weighted !== false : categoryObj?.is_weighted !== false;
 
-      let totalRealisasi = 0;
-      let totalTarget = 0;
+      // Check if any indicator in this category has a weight
+      const hasAnyIndicatorWeight = catAssessments.some((a: any) => parseFloat(a.weight_percentage) > 0);
+      const effectivelyWeighted = isWeighted && (categoryWeight > 0 || hasAnyIndicatorWeight);
 
-      for (const a of catAssessments) {
-        const indWeight = parseFloat(a.weight_percentage) || 0;
-        totalRealisasi += (parseFloat(a.realization_value) || 0) * (indWeight / 100);
-        totalTarget += (parseFloat(a.target_value) || 100) * (indWeight / 100);
-      }
+      if (effectivelyWeighted) {
+        // Weighted calculation
+        let totalRealisasi = 0;
+        let totalTarget = 0;
 
-      if (totalTarget > 0) {
-        totalScore += (totalRealisasi / totalTarget) * categoryWeight;
+        for (const a of catAssessments) {
+          const indWeight = parseFloat(a.weight_percentage) || 0;
+          totalRealisasi += (parseFloat(a.realization_value) || 0) * (indWeight / 100);
+          totalTarget += (parseFloat(a.target_value) || 100) * (indWeight / 100);
+        }
+
+        if (totalTarget > 0) {
+          totalScore += (totalRealisasi / totalTarget) * categoryWeight;
+        }
+      } else {
+        // Unweighted fallback: average achievement % (Achievement = Realization/Target)
+        let totalAchievement = 0;
+        for (const a of catAssessments) {
+          const r = parseFloat(a.realization_value) || 0;
+          const t = parseFloat(a.target_value) || 100;
+          totalAchievement += (t > 0 ? (r / t) : 0);
+        }
+        const avgAchievement = totalAchievement / catAssessments.length;
+        totalScore += avgAchievement * categoryWeight;
       }
     }
     return totalScore;
@@ -191,7 +213,7 @@ export class DashboardService {
 
       const indicator = (Array.isArray(a.m_kpi_indicators) ? a.m_kpi_indicators[0] : a.m_kpi_indicators) as any;
       const categoryObj = indicator?.m_kpi_categories;
-      const catName = (Array.isArray(categoryObj) ? categoryObj[0]?.category : categoryObj?.category) as string;
+      const catName = (Array.isArray(categoryObj) ? (categoryObj[0]?.category || categoryObj[0]?.name) : (categoryObj?.category || categoryObj?.name)) as string;
 
       const group = empDataMap.get(empId)!;
       if (catName && group[catName]) {
@@ -202,48 +224,7 @@ export class DashboardService {
   }
 
   /**
-   * Helper to calculate aggregate scores by category for a set of assessments
-   */
-  private static calculateCategoryScores(empMap: Map<string, { [key: string]: any[] }>) {
-    let p1Sum = 0, p2Sum = 0, p3Sum = 0
-    let empCount = 0
-
-    const calcCat = (cats: { [key: string]: any[] }, catName: string) => {
-      const catAss = cats[catName]
-      if (!catAss || catAss.length === 0) return 0
-
-      const first = catAss[0]
-      const indicator = (Array.isArray(first.m_kpi_indicators) ? first.m_kpi_indicators[0] : first.m_kpi_indicators) as any;
-      const categoryObj = indicator?.m_kpi_categories as any;
-      const catWeight = parseFloat(Array.isArray(categoryObj) ? categoryObj[0]?.weight_percentage : categoryObj?.weight_percentage) || 0;
-
-      let totalR = 0, totalT = 0
-      for (const a of catAss) {
-        const w = parseFloat(a.weight_percentage) || 0
-        totalR += (parseFloat(a.realization_value) || 0) * (w / 100)
-        totalT += (parseFloat(a.target_value) || 100) * (w / 100)
-      }
-      return totalT > 0 ? (totalR / totalT) * catWeight : 0
-    }
-
-    for (const cats of empMap.values()) {
-      p1Sum += calcCat(cats, 'P1')
-      p2Sum += calcCat(cats, 'P2')
-      p3Sum += calcCat(cats, 'P3')
-      empCount++
-    }
-
-    return {
-      p1: empCount > 0 ? Math.round((p1Sum / empCount) * 100) / 100 : 0,
-      p2: empCount > 0 ? Math.round((p2Sum / empCount) * 100) / 100 : 0,
-      p3: empCount > 0 ? Math.round((p3Sum / empCount) * 100) / 100 : 0,
-      total: empCount > 0 ? Math.round(((p1Sum + p2Sum + p3Sum) / empCount) * 100) / 100 : 0,
-      count: empCount
-    }
-  }
-
-  /**
-   * Get dashboard statistics - using direct queries
+   * Get dashboard statistics - enhanced with batching and robust calculations
    */
   static async getDashboardStats(unitId?: string, period?: string, year?: string): Promise<DashboardStats> {
     const supabase = await createAdminClient()
@@ -251,55 +232,64 @@ export class DashboardService {
     try {
       const resolvedPeriods = await this.getResolvedPeriods(supabase, period, year)
 
-      // Use inner join to filter active non-admin employees directly in the database
-      let assQuery = supabase
-        .from('t_kpi_assessments')
-        .select(`
-          employee_id,
-          weight_percentage,
-          realization_value,
-          target_value,
-          employee:m_employees!t_kpi_assessments_employee_id_fkey!inner(id, is_active, role, unit_id),
-          m_kpi_indicators (
-            m_kpi_categories (
-              category,
-              weight_percentage
-            )
-          )
-        `)
-        .in('period', resolvedPeriods)
-        .eq('employee.is_active', true)
-        .neq('employee.role', 'superadmin')
+      // 1. Get employees to be assessed (non-superadmin, active)
+      let empQuery = supabase
+        .from('m_employees')
+        .select('id, unit_id', { count: 'exact' })
+        .eq('is_active', true)
+        .neq('role', 'superadmin');
 
       if (unitId && unitId !== 'all') {
-        assQuery = assQuery.eq('employee.unit_id', unitId)
+        empQuery = empQuery.eq('unit_id', unitId);
       }
 
-      // Get count of employees being displayed and total units
-      const [empDisplayRes, totalUnitsRes] = await Promise.all([
-        (async () => {
-          let q = supabase
-            .from('m_employees')
-            .select('id', { count: 'exact', head: true })
-            .eq('is_active', true)
-            .neq('role', 'superadmin');
-          if (unitId && unitId !== 'all') q = q.eq('unit_id', unitId);
-          return q;
-        })(),
-        supabase
-          .from('m_units')
-          .select('id', { count: 'exact', head: true })
-          .eq('is_active', true)
-          .neq('code', 'superadmin')
-      ]);
+      const { data: allEmployees, count: totalDisplayEmployees, error: empError } = await empQuery;
+      if (empError) throw empError;
 
-      const totalDisplayEmployees = empDisplayRes.count || 0;
-      const totalUnits = (unitId && unitId !== 'all') ? 1 : (totalUnitsRes.count || 0);
+      const empIds = (allEmployees || []).map(e => e.id);
 
-      const { data: assessments, error: assError } = await assQuery
-      if (assError) throw assError
+      // 2. Fetch assessments in batches of employees to avoid 1000 row limit / URL length issues
+      const assessments: any[] = [];
+      const batchSize = 25; // Small batch size because one employee can have many indicator rows
 
-      const empDataMap = this.groupAssessmentsByEmployee(assessments || []);
+      for (let i = 0; i < empIds.length; i += batchSize) {
+        const batch = empIds.slice(i, i + batchSize);
+        const { data: batchData, error: batchError } = await supabase
+          .from('t_kpi_assessments')
+          .select(`
+            employee_id,
+            weight_percentage,
+            realization_value,
+            target_value,
+            m_kpi_indicators (
+              m_kpi_categories (
+                category,
+                weight_percentage,
+                is_weighted
+              )
+            )
+          `)
+          .in('period', resolvedPeriods)
+          .in('employee_id', batch)
+          .range(0, 5000); // Fetch more than 1000 just in case
+
+        if (batchError) {
+          console.error(`[DashboardService] Error fetching batch ${i / batchSize}:`, batchError);
+          continue;
+        }
+        if (batchData) assessments.push(...batchData);
+      }
+
+      // 3. Get total active units for context
+      const { count: totalUnitsCount } = await supabase
+        .from('m_units')
+        .select('id', { count: 'exact', head: true })
+        .eq('is_active', true)
+        .neq('code', 'ADMIN');
+
+      const totalUnits = (unitId && unitId !== 'all') ? 1 : (totalUnitsCount || 0);
+
+      const empDataMap = this.groupAssessmentsByEmployee(assessments);
       const assessedEmployeeIds = Array.from(empDataMap.keys());
       const totalAssessed = assessedEmployeeIds.length;
 
@@ -309,19 +299,19 @@ export class DashboardService {
         ? assessedScores.reduce((sum, score) => sum + score, 0) / totalAssessed
         : 0;
 
-      const completionRate = totalDisplayEmployees > 0
-        ? (totalAssessed / totalDisplayEmployees) * 100
+      const completionRate = (totalDisplayEmployees || 0) > 0
+        ? (totalAssessed / (totalDisplayEmployees || 0)) * 100
         : 0;
 
       return {
-        totalEmployees: totalDisplayEmployees,
+        totalEmployees: totalDisplayEmployees || 0,
         totalUnits: totalUnits,
         avgScore: Math.round(avgScore * 100) / 100,
         completionRate: Math.round(completionRate * 10) / 10,
         trends: { employees: 0, score: 0, completion: 0 }
       }
     } catch (error: any) {
-      console.error('Error in getSuperadminStats:', error?.message || error)
+      console.error('Error in getDashboardStats:', error?.message || error)
       return this.getFallbackStats()
     }
   }
@@ -597,19 +587,22 @@ export class DashboardService {
     const supabase = await createAdminClient()
 
     try {
-      // Get the latest available period to anchor the trend chart
-      const latestPeriod = await this.getLatestAvailablePeriod(supabase)
-
+      // 1. Resolve months to fetch
       const periods: string[] = []
-      if (latestPeriod) {
-        // Parse the latest period and go backward from there
-        const [latestYear, latestMonth] = latestPeriod.split('-').map(Number)
+      // Use the provided period or get the latest from database
+      let anchorPeriod: string | undefined = period;
+      if (!anchorPeriod) {
+        const latestAvailable = await this.getLatestAvailablePeriod(supabase)
+        anchorPeriod = latestAvailable || undefined;
+      }
+
+      if (anchorPeriod) {
+        const [y, m] = anchorPeriod.split('-').map(Number)
         for (let i = 0; i < months; i++) {
-          const d = new Date(latestYear, latestMonth - 1 - i, 1)
+          const d = new Date(y, m - 1 - i, 1)
           periods.unshift(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
         }
       } else {
-        // Fallback to current date if no data exists
         const current = new Date()
         for (let i = 0; i < months; i++) {
           const d = new Date(current.getFullYear(), current.getMonth() - i, 1)
@@ -617,6 +610,7 @@ export class DashboardService {
         }
       }
 
+      // 2. Fetch assessments for all periods
       let q = supabase
         .from('t_kpi_assessments')
         .select(`
@@ -644,11 +638,16 @@ export class DashboardService {
       const { data: assessments, error } = await q
       if (error) throw error
 
-      // Group by period then calculate scores
+      // 3. Group by period then calculate scores
       return periods.map(p => {
         const pAss = (assessments || []).filter(a => a.period === p)
+        if (pAss.length === 0) {
+          return { month: p, p1: 0, p2: 0, p3: 0, total: 0 }
+        }
+
+        // Group by employee for this period
         const empMap = this.groupAssessmentsByEmployee(pAss)
-        const scores = this.calculateCategoryScores(empMap)
+        const scores = this.calculateAverageCategoryScores(empMap)
 
         return {
           month: p,
@@ -696,8 +695,8 @@ export class DashboardService {
       const { data: assessments, error } = await query
       if (error) throw error
 
-      const empMap = this.groupAssessmentsByEmployee(assessments || [])
-      const scores = this.calculateCategoryScores(empMap)
+      const empMap = this.groupAssessmentsByEmployee((assessments || []) as any[])
+      const scores = this.calculateAverageCategoryScores(empMap)
 
       return [
         { name: 'P1 (Posisi)', value: scores.p1, color: '#3b82f6' },
@@ -711,6 +710,49 @@ export class DashboardService {
         { name: 'P2 (Kinerja)', value: 0, color: '#10b981' },
         { name: 'P3 (Potensi)', value: 0, color: '#f59e0b' }
       ]
+    }
+  }
+
+  /**
+   * Calculates average scores across a group of employees for trend and distribution charts
+   */
+  private static calculateAverageCategoryScores(empMap: Map<string, any>) {
+    if (empMap.size === 0) return { p1: 0, p2: 0, p3: 0, total: 0 }
+
+    const employeeScores = Array.from(empMap.values()).map(empData => {
+      const catScores: { [key: string]: number } = {}
+      const cats = (empData as any).cats || empData;
+
+      for (const [catName, catAss] of Object.entries(cats)) {
+        const totalWeighted = (catAss as any[]).reduce((sum: number, a: any) => sum + ((a.weight_percentage || 0) / 100) * ((a.realization_value || 0) / (a.target_value || 1)), 0)
+        const totalWeight = (catAss as any[]).reduce((sum: number, a: any) => sum + (a.weight_percentage || 0), 0)
+
+        if (totalWeight > 0) {
+          catScores[catName] = (totalWeighted / (totalWeight / 100)) * 100
+        } else if ((catAss as any[]).length > 0) {
+          const avgAch = (catAss as any[]).reduce((sum: number, a: any) => sum + ((a.realization_value || 0) / (a.target_value || 1)), 0) / (catAss as any[]).length
+          catScores[catName] = avgAch * 100
+        } else {
+          catScores[catName] = 0
+        }
+      }
+
+      return {
+        p1: catScores['P1'] || catScores['p1'] || 0,
+        p2: catScores['P2'] || catScores['p2'] || 0,
+        p3: catScores['P3'] || catScores['p3'] || 0,
+        total: this.calculateScoreFromGroupedData(cats)
+      }
+    })
+
+    const avg = (key: 'p1' | 'p2' | 'p3' | 'total') =>
+      employeeScores.reduce((sum: number, s: any) => sum + s[key], 0) / employeeScores.length
+
+    return {
+      p1: Math.round(avg('p1') * 100) / 100,
+      p2: Math.round(avg('p2') * 100) / 100,
+      p3: Math.round(avg('p3') * 100) / 100,
+      total: Math.round(avg('total') * 100) / 100
     }
   }
 

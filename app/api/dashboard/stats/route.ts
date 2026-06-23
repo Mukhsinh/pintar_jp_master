@@ -8,6 +8,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const year = parseInt(searchParams.get('year') || new Date().getFullYear().toString())
     const month = parseInt(searchParams.get('month') || (new Date().getMonth() + 1).toString())
+    const unitId = searchParams.get('unitId') || 'all'
+    const period = `${year}-${String(month).padStart(2, '0')}`
 
     // Get current user using getUser()
     const { data: { user } } = await supabase.auth.getUser()
@@ -40,10 +42,19 @@ export async function GET(request: Request) {
 
     const stats: any = {}
 
-    // Superadmin stats - use optimized single query
+    // Superadmin stats - use refined service logic for accuracy
     if (employee.role === 'superadmin') {
       try {
-        // OPTIMIZED: Single aggregated query instead of multiple queries
+        // ALWAYS use DashboardService for these metrics to ensure unit filtering and calculation accuracy
+        const dashboardStats = await DashboardService.getDashboardStats(unitId, period)
+
+        stats.totalUnits = dashboardStats.totalUnits
+        stats.totalEmployees = dashboardStats.totalEmployees
+        stats.totalUsers = dashboardStats.totalEmployees
+        stats.avgScore = dashboardStats.avgScore
+        stats.completionRate = dashboardStats.completionRate
+
+        // Try to get additional stats (pools, indicators) via RPC or separate queries
         const { data: aggregatedStats } = await supabase
           .rpc('get_dashboard_aggregated_stats', {
             target_year: year,
@@ -53,25 +64,11 @@ export async function GET(request: Request) {
 
         if (aggregatedStats) {
           const statsData = aggregatedStats as any
-          stats.totalUnits = statsData.total_units || 0
-          stats.totalEmployees = statsData.total_employees || 0
-          stats.totalUsers = statsData.total_employees || 0
-          stats.avgScore = Math.round((statsData.avg_score || 0) * 100) / 100
-          stats.completionRate = Math.round((statsData.completion_rate || 0) * 10) / 10
           stats.activePools = statsData.active_pools || 0
-          stats.totalPoolAmount = statsData.total_pool_amount || 0
+          stats.totalPool_amount = statsData.total_pool_amount || 0
           stats.totalIndicators = statsData.total_indicators || 0
         } else {
-          // Fallback to individual queries if RPC fails
-          const dashboardStats = await DashboardService.getDashboardStats()
-
-          stats.totalUnits = dashboardStats.totalUnits
-          stats.totalEmployees = dashboardStats.totalEmployees
-          stats.totalUsers = dashboardStats.totalEmployees
-          stats.avgScore = dashboardStats.avgScore
-          stats.completionRate = dashboardStats.completionRate
-
-          // Quick parallel queries for remaining data
+          // Parallel fallback for extra stats
           const [poolsResult, poolDataResult, indicatorsResult] = await Promise.allSettled([
             supabase
               .from('t_pools')
@@ -89,25 +86,14 @@ export async function GET(request: Request) {
           ])
 
           stats.activePools = poolsResult.status === 'fulfilled' ? (poolsResult.value.count || 0) : 0
-
-          const totalPoolAmount = poolDataResult.status === 'fulfilled'
+          stats.totalPoolAmount = poolDataResult.status === 'fulfilled'
             ? (poolDataResult.value.data?.reduce((sum, pool) => sum + (pool.total_amount || 0), 0) || 0)
             : 0
-          stats.totalPoolAmount = totalPoolAmount
-
           stats.totalIndicators = indicatorsResult.status === 'fulfilled' ? (indicatorsResult.value.count || 0) : 0
         }
       } catch (error) {
         console.error('Error fetching superadmin stats:', error)
-        // Return minimal stats on error
-        stats.totalUnits = 0
-        stats.totalEmployees = 0
-        stats.totalUsers = 0
-        stats.avgScore = 0
-        stats.completionRate = 0
-        stats.activePools = 0
-        stats.totalPoolAmount = 0
-        stats.totalIndicators = 0
+        return NextResponse.json({ error: 'Failed to fetch dashboard stats' }, { status: 500 })
       }
     }
 

@@ -21,7 +21,8 @@ export async function getUnitsForKPI() {
             .from('m_units')
             .select('id, code, name')
             .eq('is_active', true)
-            .neq('code', 'superadmin')
+            .neq('code', 'ADMIN')
+            .neq('name', 'SUPERADMIN')
             .order('code')
 
         if (error) throw error

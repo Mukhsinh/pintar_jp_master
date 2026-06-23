@@ -22,8 +22,10 @@ import {
 import {
   FileText, Download, TrendingUp, Building2, IdCard,
   FileSpreadsheet, FileDown, BarChart2, ClipboardCheck, ChevronDown,
-  Users, Search, Filter
+  Users, Search, Filter, Loader2, CheckCircle2, AlertCircle
 } from 'lucide-react'
+import { Progress } from '@/components/ui/progress'
+import { toast } from 'sonner'
 import { formatNumber, formatCurrency } from '@/lib/utils/format'
 
 // ────────────────────────────────────────────────────────────────
@@ -263,6 +265,7 @@ export default function ReportsPage() {
   const [selectedEmployee, setSelectedEmployee] = useState('all')
   const [detailLevel, setDetailLevel] = useState<'summary' | 'detail'>('summary')
   const [isGenerating, setIsGenerating] = useState(false)
+  const [generationProgress, setGenerationProgress] = useState(0)
   const [reportData, setReportData] = useState<any>(null)
   const [availableUnits, setAvailableUnits] = useState<any[]>([])
   const [availableEmployees, setAvailableEmployees] = useState<any[]>([])
@@ -270,6 +273,7 @@ export default function ReportsPage() {
   const [isMounted, setIsMounted] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [userProfile, setUserProfile] = useState<any>(null)
+  const [reportSummary, setReportSummary] = useState<any>(null)
 
   useEffect(() => {
     setIsMounted(true)
@@ -309,7 +313,18 @@ export default function ReportsPage() {
       return
     }
     setIsGenerating(true)
+    setGenerationProgress(0)
     setError(null)
+    setReportSummary(null)
+
+    // Simulate progress
+    const progressInterval = setInterval(() => {
+      setGenerationProgress(prev => {
+        if (prev >= 90) return prev
+        return prev + 5
+      })
+    }, 500)
+
     try {
       const response = await fetch('/api/reports/generate', {
         method: 'POST',
@@ -323,17 +338,37 @@ export default function ReportsPage() {
         }),
       })
       const data = await response.json()
+
       if (!response.ok) throw new Error(data.error || 'Gagal membuat laporan')
+
+      // Capture summary from API
+      if (data.summary) {
+        setReportSummary(data.summary)
+      }
+
+      setGenerationProgress(100)
       if (data.data?.length === 0) {
-        setError(`Tidak ada data untuk periode ${selectedPeriod}`)
+        const msg = data.message || `Tidak ada data untuk periode ${selectedPeriod}`
+        setError(msg)
         setReportData(null)
+        toast.error(msg, {
+          icon: <AlertCircle className="w-4 h-4 text-red-500" />
+        })
       } else {
         setReportData(data.data)
+        toast.success(`Laporan berhasil dibuat (${data.data.length} pegawai)`, {
+          icon: <CheckCircle2 className="w-4 h-4 text-green-500" />
+        })
       }
     } catch (err) {
-      setError((err as Error).message)
+      clearInterval(progressInterval)
+      setGenerationProgress(0)
+      const msg = (err as Error).message
+      setError(msg)
       setReportData(null)
+      toast.error(msg)
     } finally {
+      clearInterval(progressInterval)
       setIsGenerating(false)
     }
   }
@@ -432,7 +467,10 @@ export default function ReportsPage() {
       {/* Filters & Actions */}
       {selectedReport && (
         <Card className="p-6">
-          <div className="space-y-4">
+          <div className="space-y-6">
+            {/* Progress Bar when generating */}
+
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {/* Period */}
               <div className="space-y-1">
@@ -540,11 +578,68 @@ export default function ReportsPage() {
               )}
             </div>
 
-            {error && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
-                {error}
+            {isGenerating && (
+              <div className="space-y-2 py-2">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Memproses data insentif...</span>
+                  <span>{generationProgress}%</span>
+                </div>
+                <Progress value={generationProgress} className="h-2" />
               </div>
             )}
+
+            {error && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* Report Summary Stats */}
+      {reportSummary && (
+        <Card className="p-4 border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50 to-white">
+          <div className="flex flex-wrap items-center gap-6">
+            <div className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-blue-600" />
+              <div>
+                <div className="text-xs text-gray-500">Total Pegawai</div>
+                <div className="text-lg font-bold text-blue-700">{reportSummary.total_employees}</div>
+              </div>
+            </div>
+            <div className="h-8 border-r border-gray-200" />
+            <div>
+              <div className="text-xs text-gray-500">Sudah Dinilai</div>
+              <div className="text-lg font-bold text-green-600">{reportSummary.total_assessed}</div>
+            </div>
+            <div className="h-8 border-r border-gray-200" />
+            <div>
+              <div className="text-xs text-gray-500">Belum Dinilai</div>
+              <div className="text-lg font-bold text-orange-600">{(reportSummary.total_employees || 0) - (reportSummary.total_assessed || 0)}</div>
+            </div>
+            <div className="h-8 border-r border-gray-200" />
+            <div>
+              <div className="text-xs text-gray-500">Penyelesaian Penilaian</div>
+              <div className="flex items-center gap-2">
+                <div className="text-lg font-bold text-purple-700">{reportSummary.completion_percentage}%</div>
+                <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${reportSummary.completion_percentage}%`,
+                      backgroundColor: reportSummary.completion_percentage >= 80 ? '#16a34a' : reportSummary.completion_percentage >= 50 ? '#f59e0b' : '#ef4444'
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="h-8 border-r border-gray-200" />
+            <div>
+              <div className="text-xs text-gray-500">Ditampilkan di Laporan</div>
+              <div className="text-lg font-bold text-gray-700">{reportSummary.total_displayed} <span className="text-xs font-normal text-gray-400">pegawai</span></div>
+            </div>
           </div>
         </Card>
       )}

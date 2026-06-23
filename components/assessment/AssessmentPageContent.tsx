@@ -164,6 +164,11 @@ export default function AssessmentPageContent({
       filtered = filtered.filter(emp => emp.unit_id === unitFilter)
     }
 
+    // Apply status filter
+    if (statusFilter && statusFilter !== 'all') {
+      filtered = filtered.filter(emp => emp.status === statusFilter)
+    }
+
     setFilteredEmployees(filtered)
   }, [employees, debouncedSearchTerm, statusFilter, unitFilter])
 

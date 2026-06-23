@@ -158,10 +158,10 @@ export async function generateIncentiveSlipPDF(data: IncentiveSlipData | Incenti
       startY: 92,
       head: [['Komponen Penilaian', 'Skor', 'Bobot (%)', 'Nilai Tertimbang']],
       body: [
-        ['P1 (Kinerja Utama/Posisi)', slip.p1Score > 1000 ? slip.p1Score.toLocaleString('id-ID') : slip.p1Score.toFixed(2), `${p1w}%`, slip.p1Weighted > 1000 ? slip.p1Weighted.toLocaleString('id-ID') : slip.p1Weighted.toFixed(2)],
-        ['P2 (Kinerja Tambahan)', slip.p2Score > 1000 ? slip.p2Score.toLocaleString('id-ID') : slip.p2Score.toFixed(2), `${p2w}%`, slip.p2Weighted > 1000 ? slip.p2Weighted.toLocaleString('id-ID') : slip.p2Weighted.toFixed(2)],
-        ['P3 (Perilaku/Potensi)', slip.p3Score > 1000 ? slip.p3Score.toLocaleString('id-ID') : slip.p3Score.toFixed(2), `${p3w}%`, slip.p3Weighted > 1000 ? slip.p3Weighted.toLocaleString('id-ID') : slip.p3Weighted.toFixed(2)],
-        [{ content: 'Total Skor Akhir', styles: { fontStyle: 'bold', fillColor: [245, 245, 245] } }, '-', '-', { content: slip.finalScore > 1000 ? slip.finalScore.toLocaleString('id-ID') : slip.finalScore.toFixed(2), styles: { fontStyle: 'bold', fillColor: [245, 245, 245] } }],
+        ['P1 (Kinerja Utama/Posisi)', Math.round(slip.p1Score).toLocaleString('id-ID'), `${Math.round(p1w)}%`, Math.round(slip.p1Weighted).toLocaleString('id-ID')],
+        ['P2 (Kinerja Tambahan)', Math.round(slip.p2Score).toLocaleString('id-ID'), `${Math.round(p2w)}%`, Math.round(slip.p2Weighted).toLocaleString('id-ID')],
+        ['P3 (Perilaku/Potensi)', Math.round(slip.p3Score).toLocaleString('id-ID'), `${Math.round(p3w)}%`, Math.round(slip.p3Weighted).toLocaleString('id-ID')],
+        [{ content: 'Total Skor Akhir', styles: { fontStyle: 'bold', fillColor: [245, 245, 245] } }, '-', '-', { content: Math.round(slip.finalScore).toLocaleString('id-ID'), styles: { fontStyle: 'bold', fillColor: [245, 245, 245] } }],
       ],
       theme: 'grid',
       headStyles: { fillColor: [44, 62, 80], textColor: 255, fontStyle: 'bold' },
@@ -185,8 +185,8 @@ export async function generateIncentiveSlipPDF(data: IncentiveSlipData | Incenti
           // If it's activity indexing (non-priority but has value), score is activity_value
           // Otherwise it's the raw score
           const scoreDisplay = (d.is_activity && !d.is_priority) ?
-            new Intl.NumberFormat('id-ID').format(d.activity_value || 0) :
-            d.score.toFixed(2)
+            new Intl.NumberFormat('id-ID').format(Math.round(d.activity_value || 0)) :
+            Math.round(d.score).toLocaleString('id-ID')
 
           return [
             idx + 1,
@@ -231,7 +231,7 @@ export async function generateIncentiveSlipPDF(data: IncentiveSlipData | Incenti
     const incentiveLabel = isNoTax ? "Insentif Bruto (Sebelum Pajak)" : "Insentif Bruto"
 
     doc.setFontSize(9)
-    const fmtNum = (val: number) => val.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const fmtNum = (val: number) => Math.round(val).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 
     const allocatedForUnit = typeof slip.unitAllocation === 'number' ? slip.unitAllocation : 0;
     const unitActivity = typeof slip.unitTotalActivity === 'number' ? slip.unitTotalActivity : 0;
@@ -490,20 +490,22 @@ export async function generateSummaryReportPDF(
     })
   } else {
     // Default to incentive
-    head = [['No', 'NIP/NIK', 'NIK', 'Nama Pegawai', 'Unit', 'P1', 'P2', 'P3', 'Skor Akhir', 'Insentif Bruto', 'Pajak', 'Insentif Neto']]
+    head = [['No', 'NIP/NIK', 'NIK', 'Nama Pegawai', 'Unit', 'P1', 'P2', 'P3', 'Skor Akhir', 'PIR', 'Kuantitatif', 'Insentif Bruto', 'Pajak', 'Insentif Neto']]
     body = results.map((r, i) => [
       i + 1,
       r.employee_code || '-',
       r.nik || '-',
       r.employee_name,
       r.unit,
-      r.p1_score || '-',
-      r.p2_score || '-',
-      r.p3_score || '-',
-      typeof r.total_score === 'number' ? r.total_score.toFixed(2) : r.total_score,
-      parseFloat(String(r.gross_incentive)).toLocaleString('id-ID'),
-      parseFloat(String(r.tax_amount)).toLocaleString('id-ID'),
-      parseFloat(String(r.net_incentive)).toLocaleString('id-ID')
+      Math.round(Number(r.p1_score) || 0),
+      Math.round(Number(r.p2_score) || 0),
+      Math.round(Number(r.p3_score) || 0),
+      Math.round(Number(r.total_score) || 0),
+      Math.round(Number(r.pir_value) || 0).toLocaleString('id-ID'),
+      Math.round(Number(r.total_activity_rupiah || r.total_activity || 0)).toLocaleString('id-ID'),
+      Math.round(Number(r.gross_incentive) || 0).toLocaleString('id-ID'),
+      Math.round(Number(r.tax_amount) || 0).toLocaleString('id-ID'),
+      Math.round(Number(r.net_incentive) || 0).toLocaleString('id-ID')
     ])
     autoTable(doc, {
       startY: 50,

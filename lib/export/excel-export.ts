@@ -33,7 +33,7 @@ export async function exportToExcel(options: ReportExportOptions): Promise<Buffe
     case 'employee-slip':
       sheetName = reportType === 'incentive' ? 'Incentive Report' : 'Employee Slip'
       wsData = [
-        ['NIP/NIK', 'NIK', 'Nama Pegawai', 'Unit', 'Status Pegawai', 'Golongan', 'Nama Bank', 'No. Rekening', 'Nama Pemilik Rek', 'Status Pajak', 'P1 Score', 'P2 Score', 'P3 Score', 'Total Skor', 'Insentif Bruto', 'Pajak', 'Keterangan Pajak', 'Insentif Netto'],
+        ['NIP/NIK', 'NIK', 'Nama Pegawai', 'Unit', 'Status Pegawai', 'Golongan', 'Nama Bank', 'No. Rekening', 'Nama Pemilik Rek', 'Status Pajak', 'P1 Score', 'P2 Score', 'P3 Score', 'Total Skor', 'PIR', 'Rupiah Kuantitatif', 'Insentif Bruto', 'Pajak', 'Keterangan Pajak', 'Insentif Netto'],
         ...data.map((row: any) => [
           row.employee_code || '-',
           row.nik || '-',
@@ -45,14 +45,16 @@ export async function exportToExcel(options: ReportExportOptions): Promise<Buffe
           row.bank_account_number || '-',
           row.bank_account_holder || row.employee_name || '-',
           row.tax_status || 'Non-PKP',
-          row.p1_score,
-          row.p2_score,
-          row.p3_score,
-          row.total_score,
-          row.gross_incentive,
-          row.tax_amount,
+          Math.round(row.p1_score || 0),
+          Math.round(row.p2_score || 0),
+          Math.round(row.p3_score || 0),
+          Math.round(row.total_score || 0),
+          Math.round(row.pir_value || 0),
+          Math.round(row.total_activity_rupiah || row.total_activity || 0),
+          Math.round(row.gross_incentive || 0),
+          Math.round(row.tax_amount || 0),
           row.tax_detail || '-',
-          row.net_incentive,
+          Math.round(row.net_incentive || 0),
         ]),
       ]
       break
@@ -206,14 +208,26 @@ export async function exportToExcel(options: ReportExportOptions): Promise<Buffe
 
   // Set column widths based on content
   const colWidths = [
-    { wch: 25 }, // First col usually name or indicator
-    { wch: 15 },
-    { wch: 15 },
-    { wch: 15 },
-    { wch: 15 },
-    { wch: 15 },
-    { wch: 15 },
-    { wch: 15 },
+    { wch: 15 }, // NIP/NIK
+    { wch: 20 }, // NIK
+    { wch: 30 }, // Nama Pegawai
+    { wch: 25 }, // Unit
+    { wch: 15 }, // Status
+    { wch: 12 }, // Golongan
+    { wch: 15 }, // Bank
+    { wch: 20 }, // Rekening
+    { wch: 25 }, // Pemilik
+    { wch: 15 }, // Pajak Status
+    { wch: 10 }, // P1
+    { wch: 10 }, // P2
+    { wch: 10 }, // P3
+    { wch: 12 }, // Total
+    { wch: 15 }, // PIR
+    { wch: 18 }, // Kuantitatif
+    { wch: 18 }, // Bruto
+    { wch: 15 }, // Pajak
+    { wch: 20 }, // Ket Pajak
+    { wch: 18 }, // Netto
   ]
   ws['!cols'] = colWidths
 

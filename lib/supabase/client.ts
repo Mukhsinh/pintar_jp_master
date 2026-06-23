@@ -2,7 +2,7 @@ import { createBrowserClient } from '@supabase/ssr'
 
 let client: ReturnType<typeof createBrowserClient> | null = null
 
-export function createClient() {
+export function createClient(forceRefresh = false) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
@@ -11,7 +11,7 @@ export function createClient() {
     throw new Error('Supabase configuration missing')
   }
 
-  if (!client) {
+  if (!client || forceRefresh) {
     client = createBrowserClient(url, key)
   }
 

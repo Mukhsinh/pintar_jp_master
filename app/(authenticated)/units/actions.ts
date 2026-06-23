@@ -31,7 +31,8 @@ export async function getUnitsWithCounts() {
         *,
         employees:m_employees(count)
       `)
-            .neq('code', 'superadmin')
+            .neq('code', 'ADMIN')
+            .neq('name', 'SUPERADMIN')
             .order('code', { ascending: true })
 
         if (unitsError) {

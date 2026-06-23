@@ -5,6 +5,43 @@ import * as fs from 'fs'
 
 const OMIT_KEYS = ['created_at', 'updated_at', 'created_by', 'updated_by']
 
+/**
+ * Batched .in() helper to avoid Supabase PostgREST URL length overflow.
+ * Splits large arrays into chunks, queries each batch, and merges results.
+ */
+async function batchedIn(
+  supabase: any,
+  table: string,
+  selectFields: string,
+  filterColumn: string,
+  filterValues: string[],
+  additionalFilters?: (q: any) => any,
+  batchSize: number = 20 // Reduced from 50 to stay under 1000 rows with 30+ indicators/emp in Keperawatan unit
+): Promise<any[]> {
+  if (filterValues.length === 0) return []
+
+  const results: any[] = []
+  for (let i = 0; i < filterValues.length; i += batchSize) {
+    const batch = filterValues.slice(i, i + batchSize)
+    let query = supabase.from(table).select(selectFields).in(filterColumn, batch)
+    if (additionalFilters) query = additionalFilters(query)
+    // Important: even with 50 emps, if indicators are many, we might hit 1000.
+    // Fetch up to 10000 rows per batch just in case, though PostgREST might still cap at 1000.
+    const { data, error } = await query.range(0, 10000)
+    if (error) {
+      console.error(`[batchedIn] Error fetching batch ${i / batchSize + 1} from ${table}:`, error)
+      throw error
+    }
+    if (data) results.push(...data)
+
+    if (data && data.length >= 1000 && batchSize > 10) {
+      console.warn(`[batchedIn] Warning: Batch potentially truncated (${data.length} rows returned). Consider reducing batchSize further.`)
+    }
+  }
+  console.log(`[batchedIn] ${table}.${filterColumn}: ${filterValues.length} IDs -> ${Math.ceil(filterValues.length / batchSize)} batches -> ${results.length} rows`)
+  return results
+}
+
 import { getTERCategory, getTERRate } from '@/lib/formulas/ter-lookup'
 
 function calculatePPh21(
@@ -193,9 +230,11 @@ export async function POST(request: NextRequest) {
         .from('m_employees')
         .select('id')
         .eq('unit_id', unitId)
+        .range(0, 9999)
 
       const empIds = unitEmps?.map(e => e.id) || []
       if (empIds.length > 0) {
+        // Use all employee IDs for prerequisite check to avoid missing data if the sample doesn't have assessments
         assessmentQuery = assessmentQuery.in('employee_id', empIds)
       } else {
         return NextResponse.json({
@@ -237,39 +276,121 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if data is empty (Requirement 12.7)
-    if (data.length === 0) {
+    // Build summary metadata for selected unit/period
+    const effectiveUnitId = unitId && unitId !== 'all' ? unitId : null
+    let totalEmployeesInUnit = 0
+    let assessedCount = 0
+    let notAssessedCount = 0
+    let completionPercentage = 0
+
+    try {
+      // --- Summary Logic Sync ---
+      let empListQuery = supabase
+        .from('m_employees')
+        .select('id, unit_id, role, is_active')
+        .neq('role', 'superadmin')
+
+      if (effectiveUnitId) {
+        empListQuery = empListQuery.eq('unit_id', effectiveUnitId)
+      }
+
+      const { data: unitEmployees, error: unitEmpErr } = await empListQuery.range(0, 9999)
+      if (unitEmpErr) console.error('[Summary] Error fetching employees:', unitEmpErr)
+
+      const unitEmpIds = (unitEmployees || []).map(e => e.id)
+      totalEmployeesInUnit = unitEmpIds.length
+      console.log(`[Summary] Found ${totalEmployeesInUnit} candidate employees for unit ${effectiveUnitId}`)
+
+      if (totalEmployeesInUnit > 0) {
+        // Use batched query to handle large units without URL overflow
+        try {
+          const assessedEmps = await batchedIn(
+            supabase,
+            't_kpi_assessments',
+            'employee_id',
+            'employee_id',
+            unitEmpIds,
+            q => q.eq('period', period)
+          )
+
+          const uniqueAssessedIds = new Set((assessedEmps || []).map((a: any) => a.employee_id))
+          assessedCount = uniqueAssessedIds.size
+          console.log(`[Summary] Period ${period}: Found ${assessedCount} unique assessed employees out of ${totalEmployeesInUnit}`)
+        } catch (assessErr) {
+          console.error('[Summary] Error fetching assessments:', assessErr)
+        }
+      } else {
+        assessedCount = 0
+      }
+      // ----------------------------------------
+
+      notAssessedCount = totalEmployeesInUnit - assessedCount
+      if (notAssessedCount < 0) notAssessedCount = 0
+      completionPercentage = totalEmployeesInUnit > 0
+        ? Math.round((assessedCount / totalEmployeesInUnit) * 100)
+        : 0
+      // Final check for empty results to provide clear feedback
+      if (data.length === 0) {
+        console.log(`[Report] No data generated for unit ${unitId}, period ${period}`)
+        return NextResponse.json({
+          success: true,
+          data: [],
+          summary: {
+            period,
+            unit_name: unitId || 'Semua Unit',
+            total_employees: 0,
+            total_assessed: 0,
+            total_displayed: 0,
+            completion_percentage: 0
+          },
+          message: `Tidak ada data penilaian yang ditemukan untuk unit ${unitId || 'terpilih'} pada periode ${period}.`
+        })
+      }
+
+      // 3. Count unique employees in 'KEPERAWATAN' with assessments in '2026-05'
+      // CRITICAL: Synchronize summary counts with the actual report data
+      // The "Sudah Dinilai" and "Ditampilkan" counts must match the final data length
+      const reportRows = data.length;
+
+      const summary = {
+        period,
+        unit_name: data[0]?.unit || 'Semua Unit',
+        total_employees: totalEmployeesInUnit,
+        total_assessed: assessedCount, // Use the real count from database
+        total_displayed: data.length,   // Use the actually generated report length
+        completion_percentage: totalEmployeesInUnit > 0 ? Math.round((assessedCount / totalEmployeesInUnit) * 100) : 100
+      };
+
+      // Sanitize data before sending to client
+      const sanitizedData = data.map((row: any) => {
+        const clean: any = {}
+        for (const key in row) {
+          const value = row[key]
+          if (value === null || value === undefined) {
+            clean[key] = value
+          } else if (Array.isArray(value) || typeof value === 'object') {
+            try {
+              clean[key] = JSON.stringify(value)
+            } catch (e) {
+              clean[key] = '[Complex Object]'
+            }
+          } else {
+            clean[key] = value
+          }
+        }
+        return clean
+      })
+
       return NextResponse.json({
         success: true,
-        data: [],
-        message: `No data available for the selected period`,
+        data: sanitizedData,
+        summary
       })
+    } catch (summaryErr) {
+      console.error('Error building summary:', summaryErr)
     }
 
-    // Sanitize data before sending to client:
-    // Strip any non-primitive fields (arrays/objects) that would crash React rendering.
-    // Fields like assessment_details, p*_breakdown are only needed server-side.
-    const sanitizedData = data.map((row: any) => {
-      const clean: any = {}
-      for (const key in row) {
-        const value = row[key]
-        if (value === null || value === undefined) {
-          clean[key] = value
-        } else if (Array.isArray(value) || typeof value === 'object') {
-          // Serialize non-primitive fields (arrays/objects) to Prevent React crashes
-          // We only do this for fields that are actually objects/arrays to keep it performant
-          try {
-            clean[key] = JSON.stringify(value)
-          } catch (e) {
-            clean[key] = '[Complex Object]'
-          }
-        } else {
-          clean[key] = value
-        }
-      }
-      return clean
-    })
-
-    return NextResponse.json({ success: true, data: sanitizedData })
+    return NextResponse.json({ success: true, data: [], message: 'Fallback triggered' })
   } catch (error: any) {
     console.error('Report generation error:', error)
     return NextResponse.json(
@@ -309,70 +430,87 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
 
   const netPool = Number(poolData.net_pool || 0);
 
-  const { data: allEmployees, error: allEmpError } = await supabase
+  // 2. Fetch active employees (filtered by unit/employee if specified)
+  // 2. Fetch all employees (including inactive if they have assessments)
+  // We remove is_active check because if they have assessments in this period, they should be in the report
+  let empQuery = supabase
     .from('m_employees')
-    .select(`
-      *,
-      m_units (
-        id,
-        name,
-        proportion_percentage
-      )
-    `)
-    .eq('is_active', true)
+    .select('*, m_units(id, name, proportion_percentage)')
+    .neq('role', 'superadmin')
+
+  if (employeeId && employeeId !== 'all') {
+    empQuery = empQuery.eq('id', employeeId)
+  } else if (unitId && unitId !== 'all') {
+    empQuery = empQuery.eq('unit_id', unitId)
+  }
+
+  const { data: allEmployees, error: allEmpError } = await empQuery.range(0, 9999)
+  console.log(`[Report] generateIncentiveReport: Fetched ${allEmployees?.length || 0} employees candidates for unit ${unitId}`)
 
   if (allEmpError) {
     console.error('Error fetching employees:', allEmpError)
     throw new Error('Failed to fetch employee data: ' + JSON.stringify(allEmpError))
   }
 
-  // 3. Get ALL assessments for the period (main rows + sub-assessments)
-  // We fetch both to allow fallback: if main row score is null, sum from sub-assessments
-  const [assessmentsResult, subAssessmentsResult] = await Promise.all([
-    supabase
-      .from('t_kpi_assessments')
-      .select(`
-        employee_id,
-        indicator_id,
-        score,
-        weight_percentage,
-        achievement_percentage,
-        realization_value,
-        target_value,
-        m_kpi_indicators!inner (
-          name,
-          weight_percentage,
-          base_index_value,
-          target_value,
-          calculation_method,
-          m_kpi_categories!inner (
-            category,
-            weight_percentage,
-            configuration_style,
-            is_weighted
-          )
-        )
-      `)
-      .eq('period', period)
-      .is('sub_indicator_id', null),
-    supabase
-      .from('t_kpi_assessments')
-      .select('employee_id, indicator_id, score, realization_value')
-      .eq('period', period)
-      .not('sub_indicator_id', 'is', null)
-  ])
-
-  if (assessmentsResult.error) {
-    console.error('Error fetching assessments:', assessmentsResult.error)
-    throw new Error('Failed to fetch assessment data')
+  if (!allEmployees || allEmployees.length === 0) {
+    console.log(`[Report] No employees found for unit: ${unitId}, emp: ${employeeId}`)
+    return []
   }
 
-  const allAssessments = assessmentsResult.data
+  const empIds = allEmployees.map((e: any) => e.id)
+  console.log(`[Report] Starting assessment fetch for ${empIds.length} employees in period ${period}`)
+
+  // 3. Get assessments for the filtered employees in this period
+  // Use batchedIn to avoid PostgREST URL length overflow with large employee sets
+  const mainSelectFields = `
+    employee_id,
+    indicator_id,
+    score,
+    weight_percentage,
+    achievement_percentage,
+    realization_value,
+    target_value,
+    m_kpi_indicators (
+      id,
+      name,
+      weight_percentage,
+      base_index_value,
+      target_value,
+      calculation_method,
+      m_kpi_categories (
+        category,
+        weight_percentage,
+        configuration_style,
+        is_weighted
+      )
+    )
+  `
+
+  const [allAssessments, subAssessments] = await Promise.all([
+    batchedIn(
+      supabase,
+      't_kpi_assessments',
+      mainSelectFields,
+      'employee_id',
+      empIds,
+      q => q.eq('period', period).is('sub_indicator_id', null)
+    ),
+    batchedIn(
+      supabase,
+      't_kpi_assessments',
+      'employee_id, indicator_id, score, realization_value',
+      'employee_id',
+      empIds,
+      q => q.eq('period', period).not('sub_indicator_id', 'is', null)
+    )
+  ])
+
+  console.log(`[Report] Fetched ${allAssessments.length} main and ${subAssessments.length} sub-assessments`)
 
   // Build a lookup: employee_id+indicator_id → aggregated sub-assessment score & realization
   // Used as fallback when main row score is null (legacy data)
   const subScoreMap = new Map<string, { score: number; realization: number }>()
-  for (const sub of (subAssessmentsResult.data || [])) {
+  for (const sub of subAssessments) {
     const key = `${sub.employee_id}:${sub.indicator_id}`
     const existing = subScoreMap.get(key)
     if (existing) {
@@ -393,31 +531,28 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
     const empAssessments = allAssessments?.filter((a: any) => a.employee_id === empId) || []
     let totalActivityRupiah = 0
     const assessmentDetails: any[] = []
+    const processedIndices = new Set<string>()
 
     const calcCategoryScore = (categoryName: string) => {
-      // Robust matching: Try exact match, then case-insensitive partial match
-      let catAssessments = empAssessments.filter((a: any) =>
+      const catAssessments = empAssessments.filter((a: any) =>
         a.m_kpi_indicators?.m_kpi_categories?.category === categoryName
       )
-
-      if (catAssessments.length === 0) {
-        catAssessments = empAssessments.filter((a: any) => {
-          const cat = (a.m_kpi_indicators?.m_kpi_categories?.category || '').toUpperCase()
-          return cat.includes(categoryName.toUpperCase())
-        })
-      }
-
       if (catAssessments.length === 0) return 0
 
-      // Weights and styles are category-specific. We use the first one found for this category.
-      const catMeta = catAssessments[0].m_kpi_indicators.m_kpi_categories
+      const catMeta = catAssessments[0].m_kpi_indicators?.m_kpi_categories || {}
       const categoryWeight = parseFloat(catMeta.weight_percentage) || 0
       const isActivityStyle = catMeta.configuration_style === 'activity'
+
+      const hasAnyIndicatorWeight = catAssessments.some((a: any) => parseFloat(a.weight_percentage) > 0)
+      const effectivelyWeighted = catMeta.is_weighted !== false && (categoryWeight > 0 || hasAnyIndicatorWeight)
 
       let totalRealisasi = 0
       let totalTarget = 0
 
       for (const a of catAssessments) {
+        // Mark as processed so we don't count it again in "others"
+        processedIndices.add(`${a.employee_id}:${a.indicator_id}`)
+
         const indRealization = parseFloat(a.realization_value) || 0
         const basicVal = parseFloat(a.m_kpi_indicators?.base_index_value) || 0
         const rawScore = a.score  // may be null for legacy rows
@@ -425,13 +560,11 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
         const indWeight = parseFloat(a.weight_percentage) || 0
         const indTarget = parseFloat(a.target_value) || 100
         const calcMethod = a.m_kpi_indicators?.calculation_method || 'indexing'
-        const isWeightedCat = a.m_kpi_indicators?.m_kpi_categories?.is_weighted !== false
 
         const isPriority = calcMethod === 'priority'
         const isActivityIndexing = (isActivityStyle || basicVal > 0) && !isPriority
 
         // Resolve effective score: prefer main row score, fallback to sub-assessment aggregate
-        // This handles legacy rows where main row score was not synced (score = null)
         let effectiveScore: number
         if (rawScore !== null && rawScore !== undefined) {
           effectiveScore = parseFloat(rawScore) || 0
@@ -446,13 +579,10 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
         let activityValue = 0
         if (isPriority || isActivityIndexing) {
           if (indicatorScore > 0 && (isActivityStyle || basicVal <= 1)) {
-            // Trust saved score (direct Rupiah from scoring criteria or tariff×volume)
             activityValue = indicatorScore
           } else if (basicVal > 1) {
-            // Volume × tariff
             activityValue = indRealization * basicVal
           } else {
-            // Final fallback: use score (already resolved above) or realization
             activityValue = indicatorScore || indRealization
           }
         }
@@ -467,46 +597,37 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
           score: indicatorScore,
           basic_value: basicVal,
           calculation_method: calcMethod,
-          is_weighted: isWeightedCat && calcMethod === 'indexing',
+          is_weighted: effectivelyWeighted && calcMethod === 'indexing',
           is_activity: isPriority || isActivityIndexing,
           activity_value: activityValue,
           is_priority: isPriority
         })
 
-        // 1. Priority indicators OR Activity-based Indexing with a set Tarif (base_index_value > 0)
-        // These are treated as FIXED Rupiah values deducted from pool FIRST (P2 style and Priority style)
         if (isPriority || isActivityIndexing) {
           totalActivityRupiah = Number(totalActivityRupiah) + Number(activityValue)
-        }
-        // 2. Standard Indexing indicators: Contribute to merit-based distribution via achievement %
-        else {
+        } else {
           if (isMedicalUnit) {
             totalRealisasi = Number(totalRealisasi) + Number(indRealization)
           } else {
-            // Standard point calculation
-            if (isWeightedCat) {
+            if (effectivelyWeighted) {
               totalRealisasi = Number(totalRealisasi) + (Number(indRealization) * (Number(indWeight) / 100))
               totalTarget = Number(totalTarget) + (Number(indTarget) * (Number(indWeight) / 100))
             } else {
-              // Unweighted: contribute raw achievement percentage
               const achievement = Number(indTarget) === 0 ? 100 : (Number(indRealization) / Number(indTarget)) * 100
               totalRealisasi = Number(totalRealisasi) + achievement
-              totalTarget = Number(totalTarget) + 100 // Target for an indicator in an unweighted category is 100%
+              totalTarget = Number(totalTarget) + 100
             }
           }
         }
       }
 
-      // Note: We no longer return 0 for activity styles, because activity-based indexing
-      // (like P2 in some contexts) now contributes to the P-scores.
-
-
       if (isMedicalUnit) {
         return totalRealisasi
-      } else if (!catMeta.is_weighted) {
-        // Return sum of achievement points for unweighted categories
-        return totalRealisasi
+      } else if (!effectivelyWeighted) {
+        // Fallback for unweighted: average achievement
+        return totalTarget > 0 ? (totalRealisasi / totalTarget) * 100 : 0
       } else if (totalTarget > 0) {
+        // Weighted score scaled by category weight
         return (totalRealisasi / totalTarget) * categoryWeight
       }
       return 0
@@ -515,6 +636,24 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
     const p1 = Number(calcCategoryScore('P1').toFixed(2))
     const p2 = Number(calcCategoryScore('P2').toFixed(2))
     const p3 = Number(calcCategoryScore('P3').toFixed(2))
+
+    // Catch-all for assessments in other categories to ensure they are added to assessmentDetails
+    const remainingAssessments = empAssessments.filter((a: any) => !processedIndices.has(`${a.employee_id}:${a.indicator_id}`))
+    for (const a of remainingAssessments) {
+      const indName = a.m_kpi_indicators?.name || '-'
+      const catName = a.m_kpi_indicators?.m_kpi_categories?.category || 'Lainnya'
+      assessmentDetails.push({
+        name: indName,
+        category: catName,
+        weight: parseFloat(a.weight_percentage) || 0,
+        target: parseFloat(a.target_value) || 100,
+        realization: parseFloat(a.realization_value) || 0,
+        score: parseFloat(a.score) || 0,
+        is_weighted: false,
+        is_activity: false,
+        activity_value: 0
+      })
+    }
 
     return {
       p1, p2, p3,
@@ -530,8 +669,12 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
   const unitTotalActivityMap = new Map<string, number>()
   const unitEmployeeCountMap = new Map<string, number>()
 
+  let skippedNoUnit = 0
   for (const emp of allEmployees) {
-    if (!emp.m_units) continue
+    if (!emp.m_units) {
+      skippedNoUnit++
+      continue
+    }
     const unitData = Array.isArray(emp.m_units) ? emp.m_units[0] : emp.m_units
     const uId = unitData?.id
     const isMedical = isMedicalUnit(uId, unitData?.name)
@@ -543,6 +686,9 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
     unitTotalScoresMap.set(uId, Number(unitTotalScoresMap.get(uId) || 0) + Number(scores.totalScore))
     unitTotalActivityMap.set(uId, Number(unitTotalActivityMap.get(uId) || 0) + Number(scores.totalActivityRupiah))
     unitEmployeeCountMap.set(uId, Number(unitEmployeeCountMap.get(uId) || 0) + 1)
+  }
+  if (skippedNoUnit > 0) {
+    console.warn(`[Report] WARNING: Skipped ${skippedNoUnit} employees without unit data (m_units is null)`)
   }
 
   // --- Calculate PIR per unit and save audit trail ---
@@ -620,7 +766,13 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
 
     const { emp, p1, p2, p3, totalScore, totalActivityRupiah, assessmentDetails } = data
 
-    if (totalScore === 0 && totalActivityRupiah === 0 && assessmentDetails.length === 0) continue
+    // Relaxed condition: Include employee if they were fetched in our assessment queries.
+    // If they were in empIds and we fetched something (main or sub), they should be here.
+    // We already filtered allEmployees down to reportEmployeeIds.
+    // JUST check if they have at least one record in assessmentDetails OR if they were part of the assessments fetch.
+    const hasAnyAssessment = assessmentDetails.length > 0 || allAssessments.some(a => a.employee_id === empId) || subAssessments.some(s => s.employee_id === empId);
+
+    if (!hasAnyAssessment) continue
 
     const unitData = Array.isArray(emp.m_units) ? emp.m_units[0] : emp.m_units
     const uId = unitData?.id
@@ -713,6 +865,9 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
     })
   }
 
+  // Sort by full name for better readability
+  report.sort((a, b) => (a.employee_name || '').localeCompare(b.employee_name || ''))
+
   return report
 }
 
@@ -722,41 +877,37 @@ async function generateIncentiveReport(supabase: any, period: string, unitId?: s
  */
 async function generateKPIAchievementReport(supabase: any, period: string, unitId?: string, employeeId?: string, detailLevel?: string) {
   // Fetch Assessment Data - only main indicator rows (sub_indicator_id IS NULL)
-  let query = supabase
-    .from('t_kpi_assessments')
-    .select(`
-      realization_value,
-      target_value,
-      achievement_percentage,
-      employee_id,
-      m_employees!t_kpi_assessments_employee_id_fkey (
-        id,
-        full_name,
-        nik,
-        m_units (
-          name
-        )
-      ),
-      m_kpi_indicators!inner (
-        id,
-        name,
-        target_value,
-        weight_percentage,
-        base_index_value,
-        calculation_method,
-        m_kpi_categories (
-          category,
-          configuration_style,
-          is_weighted
-        )
+  const kpiSelectFields = `
+    realization_value,
+    target_value,
+    achievement_percentage,
+    employee_id,
+    m_employees!t_kpi_assessments_employee_id_fkey (
+      id,
+      full_name,
+      nik,
+      m_units (
+        name
       )
-    `)
-    .eq('period', period)
-    .is('sub_indicator_id', null)  // Exclude sub-indicator rows to prevent duplicate counting
+    ),
+    m_kpi_indicators!inner (
+      id,
+      name,
+      target_value,
+      weight_percentage,
+      base_index_value,
+      calculation_method,
+      m_kpi_categories (
+        category,
+        configuration_style,
+        is_weighted
+      )
+    )
+  `
+
+  let assessments: any[] = []
 
   if (unitId || employeeId) {
-    // If employeeId is specified, we prioritize it as it is more specific.
-    // We only use unitId if employeeId is not provided or 'all'.
     const matchCriteria: any = {}
     if (employeeId && employeeId !== 'all') {
       matchCriteria.id = employeeId
@@ -768,17 +919,33 @@ async function generateKPIAchievementReport(supabase: any, period: string, unitI
       .from('m_employees')
       .select('id')
       .match(matchCriteria)
+      .range(0, 9999)
 
     const empIds = emps?.map((e: any) => e.id) || []
-    if (empIds.length > 0) {
-      query = query.in('employee_id', empIds)
-    } else {
-      // no matching employees, return empty array
-      return []
-    }
+    if (empIds.length === 0) return []
+
+    // Use batchedIn to avoid URL overflow with large employee sets
+    assessments = await batchedIn(
+      supabase,
+      't_kpi_assessments',
+      kpiSelectFields,
+      'employee_id',
+      empIds,
+      q => q.eq('period', period).is('sub_indicator_id', null)
+    )
+  } else {
+    // No unit/employee filter — fetch all
+    const { data, error: assError } = await supabase
+      .from('t_kpi_assessments')
+      .select(kpiSelectFields)
+      .eq('period', period)
+      .is('sub_indicator_id', null)
+      .range(0, 50000)
+    if (assError) throw assError
+    assessments = data || []
   }
 
-  const { data: assessments, error: assError } = await query
+  const assError = null // already handled above
 
   if (assError) throw assError
 

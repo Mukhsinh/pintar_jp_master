@@ -18,23 +18,25 @@ function safeJsonParse(str: string): any {
 /**
  * Clear all auth-related data from browser storage
  */
-export function clearAuthStorage() {
+export function clearAuthStorage(force = false) {
   if (typeof window === 'undefined') return
 
   try {
-    // Don't clear if on login page or during login process
-    if (window.location.pathname === '/login' || window.location.pathname === '/dashboard') {
-      console.log('[AUTH_STORAGE] Skipping storage clear on sensitive page')
+    // Don't clear if on dashboard (sensitive) unless forced
+    if (!force && window.location.pathname === '/dashboard') {
       return
     }
 
+    // Special handling for login page: we WANT to clear stale data here
+    // to prevent "Invalid Refresh Token" console errors
+
     console.log('[AUTH_STORAGE] Clearing auth storage...')
-    
+
     // Clear localStorage
     const keysToRemove: string[] = []
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
-      if (key && key.includes('supabase')) {
+      if (key && (key.includes('supabase') || key.includes('sb-'))) {
         keysToRemove.push(key)
       }
     }
@@ -42,7 +44,7 @@ export function clearAuthStorage() {
       try {
         localStorage.removeItem(key)
       } catch (error) {
-        console.warn('Failed to remove localStorage key:', key)
+        // ignore
       }
     })
 
@@ -50,7 +52,7 @@ export function clearAuthStorage() {
     const sessionKeysToRemove: string[] = []
     for (let i = 0; i < sessionStorage.length; i++) {
       const key = sessionStorage.key(i)
-      if (key && key.includes('supabase')) {
+      if (key && (key.includes('supabase') || key.includes('sb-'))) {
         sessionKeysToRemove.push(key)
       }
     }
@@ -58,9 +60,19 @@ export function clearAuthStorage() {
       try {
         sessionStorage.removeItem(key)
       } catch (error) {
-        console.warn('Failed to remove sessionStorage key:', key)
+        // ignore
       }
     })
+
+    // Clear cookies manually as a fallback
+    const cookies = document.cookie.split(';')
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim()
+      if (cookie.startsWith('sb-') || cookie.includes('supabase')) {
+        const name = cookie.split('=')[0]
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+      }
+    }
 
     console.log('[AUTH_STORAGE] Auth storage cleared')
   } catch (error: any) {
@@ -78,30 +90,14 @@ export function validateSessionData(): boolean {
     // Check all supabase-related localStorage items
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
-      if (key && key.includes('supabase')) {
+      if (key && (key.includes('supabase') || key.includes('sb-'))) {
         const value = localStorage.getItem(key)
         if (value) {
           // Try to parse the value
           const parsed = safeJsonParse(value)
           if (parsed === null && value.startsWith('{')) {
             // Corrupted JSON, remove it
-            console.warn('Removing corrupted localStorage item:', key)
             localStorage.removeItem(key)
-          }
-        }
-      }
-    }
-
-    // Check sessionStorage as well
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const key = sessionStorage.key(i)
-      if (key && key.includes('supabase')) {
-        const value = sessionStorage.getItem(key)
-        if (value) {
-          const parsed = safeJsonParse(value)
-          if (parsed === null && value.startsWith('{')) {
-            console.warn('Removing corrupted sessionStorage item:', key)
-            sessionStorage.removeItem(key)
           }
         }
       }
@@ -109,8 +105,6 @@ export function validateSessionData(): boolean {
 
     return true
   } catch (error: any) {
-    console.error('Error validating session data:', error)
-    clearAuthStorage()
     return false
   }
 }
@@ -123,21 +117,19 @@ export async function handleInvalidRefreshToken() {
   if (typeof window === 'undefined') return
 
   try {
+    // Clear client-side storage first
+    clearAuthStorage(true)
+
     const supabase = createClient()
-    
-    // Sign out to clear server-side session
-    await supabase.auth.signOut()
-    
-    // Clear client-side storage
-    clearAuthStorage()
-    
+    // Sign out to clear server-side session (optional session clearing)
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => { })
+
     // Redirect to login
     const currentPath = window.location.pathname
-    const loginUrl = `/login?redirectTo=${encodeURIComponent(currentPath)}&error=session_expired`
-    window.location.href = loginUrl
+    if (currentPath !== '/login') {
+      window.location.href = `/login?redirectTo=${encodeURIComponent(currentPath)}&error=session_expired`
+    }
   } catch (error: any) {
-    console.error('Error handling invalid refresh token:', error)
-    // Force redirect anyway
     window.location.href = '/login?error=session_expired'
   }
 }
@@ -149,21 +141,34 @@ export async function handleInvalidRefreshToken() {
 export function setupAuthErrorHandler() {
   if (typeof window === 'undefined') return
 
-  // Validate session data on startup only
+  const pathname = window.location.pathname
+
+  // Skip on login page to avoid "Refresh Token Not Found" console errors
+  // during client initialization when a stale session exists
+  if (pathname === '/login') {
+    validateSessionData()
+    // Clear storage on login page to ensure clean start
+    // but don't initialize Supabase client yet
+    return
+  }
+
+  // Validate session data on startup
   validateSessionData()
 
-  const supabase = createClient()
+  try {
+    const supabase = createClient()
 
-  // Only listen for sign out events - don't log or interfere with other events
-  supabase.auth.onAuthStateChange((event, session) => {
-    // Only handle explicit sign out
-    if (event === 'SIGNED_OUT' && !session) {
-      if (window.location.pathname !== '/login') {
-        clearAuthStorage()
+    // Only listen for events
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        if (window.location.pathname !== '/login') {
+          clearAuthStorage(true)
+        }
       }
-    }
-    // Don't log or handle other events to avoid interference
-  })
+    })
+  } catch (err) {
+    // Ignore initialization errors
+  }
 }
 
 /**
@@ -180,12 +185,12 @@ export async function verifySession(): Promise<boolean> {
 
     const supabase = createClient()
     const { data: { session }, error } = await supabase.auth.getSession()
-    
+
     if (error || !session) {
       await handleInvalidRefreshToken()
       return false
     }
-    
+
     return true
   } catch (error: any) {
     console.error('Error verifying session:', error)

@@ -43,8 +43,9 @@ export async function GET(request: NextRequest) {
                 .from('m_units')
                 .select('id, name, code')
                 .eq('is_active', true)
-                .neq('code', 'superadmin')
+                .neq('code', 'ADMIN')
                 .order('name')
+                .range(0, 9999)
 
             if (employee.role === 'unit_manager') {
                 query = query.eq('id', employee.unit_id)
@@ -63,6 +64,7 @@ export async function GET(request: NextRequest) {
                 .eq('is_active', true)
                 .neq('role', 'superadmin')
                 .order('full_name')
+                .range(0, 9999)
 
             if (employee.role === 'unit_manager') {
                 query = query.eq('unit_id', employee.unit_id)

@@ -14,86 +14,24 @@ interface AssessmentStatus {
 }
 
 async function getAssessmentStatus(supabase: any, unitIdFilter: string | null, period: string): Promise<AssessmentStatus[]> {
-  // Fetch employees
-  let employeeQuery = supabase
-    .from('m_employees')
-    .select('id, full_name, unit_id, role, m_units(name)')
-    .eq('is_active', true)
-    .neq('role', 'superadmin')
+  let query = supabase
+    .from('v_assessment_status')
+    .select('*')
+    .eq('period', period)
 
-  if (unitIdFilter) {
-    employeeQuery = employeeQuery.eq('unit_id', unitIdFilter)
+  if (unitIdFilter && unitIdFilter !== '0') {
+    query = query.eq('unit_id', unitIdFilter)
   }
 
-  const { data: employees, error: empError } = await employeeQuery
-  if (empError) throw empError
+  const { data, error } = await query.order('full_name').range(0, 9999)
+  if (error) throw error
 
-  // Fetch all active indicators with their category and unit_id
-  const { data: indicators, error: indError } = await supabase
-    .from('m_kpi_indicators')
-    .select(`
-      id,
-      m_kpi_categories!inner (
-        unit_id
-      )
-    `)
-    .eq('is_active', true)
-  if (indError) throw indError
-
-  // Group indicator counts by unit_id
-  const indicatorsCountByUnit = (indicators || []).reduce((acc: Record<string, number>, curr: any) => {
-    const unitId = curr.m_kpi_categories?.unit_id
-    if (unitId) {
-      acc[unitId] = (acc[unitId] || 0) + 1
-    }
-    return acc
-  }, {})
-
-  // Fetch assessments for the period
-  const { data: assessments, error: assError } = await supabase
-    .from('t_kpi_assessments')
-    .select('employee_id, indicator_id, score')
-    .eq('period', period)
-  if (assError) throw assError
-
-  // Group assessments by employee
-  const assessmentMap = new Map<string, Set<string>>()
-  assessments?.forEach((ass: any) => {
-    // Treat as "assessed" if score is not null
-    if (ass.indicator_id) {
-      if (!assessmentMap.has(ass.employee_id)) {
-        assessmentMap.set(ass.employee_id, new Set())
-      }
-      assessmentMap.get(ass.employee_id)?.add(ass.indicator_id)
-    }
-  })
-
-  return (employees || []).map((emp: any) => {
-    const totalIndicatorsCount = indicatorsCountByUnit[emp.unit_id] || 0
-    const assessedCount = assessmentMap.get(emp.id)?.size || 0
-
-    let status = 'Belum Dinilai'
-    if (assessedCount > 0) {
-      status = assessedCount >= totalIndicatorsCount ? 'Selesai' : 'Sebagian'
-    } else if (totalIndicatorsCount === 0) {
-      // If no indicators assigned to this unit, the user cannot assess them. Keep as Belum Dinilai.
-      status = 'Belum Dinilai'
-    }
-
-    return {
-      employee_id: emp.id,
-      full_name: emp.full_name,
-      unit_id: emp.unit_id,
-      unit_name: emp.m_units?.name || 'Unknown',
-      period: period,
-      total_indicators: totalIndicatorsCount,
-      assessed_indicators: assessedCount,
-      status: status,
-      completion_percentage: totalIndicatorsCount > 0
-        ? Math.round((assessedCount / totalIndicatorsCount) * 100)
-        : (assessedCount === 0 ? 0 : 100)
-    }
-  })
+  // Filter out ADMIN unit (standard isolation)
+  return (data || []).filter((emp: any) =>
+    emp.unit_code !== 'ADMIN' &&
+    emp.unit_name !== 'SUPERADMIN' &&
+    emp.role !== 'superadmin'
+  )
 }
 
 export async function GET(request: NextRequest) {
@@ -197,7 +135,7 @@ export async function GET(request: NextRequest) {
         completed: statuses.filter(s => s.status === 'Selesai').length,
         started: statuses.filter(s => s.assessed_indicators > 0).length,
         partial: statuses.filter(s => s.status === 'Sebagian').length,
-        not_started: statuses.filter(s => s.status === 'Belum Dinilai').length,
+        not_started: statuses.filter(s => s.assessed_indicators === 0).length,
         completion_rate: statuses.length > 0
           ? Math.round((statuses.filter(s => s.status === 'Selesai').length / statuses.length) * 100)
           : 0

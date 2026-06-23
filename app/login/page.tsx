@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { clearAuthStorage } from '@/lib/utils/auth-session'
 import { Loader2, Eye, EyeOff, Mail, Lock, MessageCircle } from 'lucide-react'
 import Image from 'next/image'
 
@@ -30,18 +31,10 @@ export default function LoginPage() {
     setIsMounted(true)
     const code = searchParams.get('error')
     if (code) setError(getErrorMessage(code))
-    clearOldSession()
-  }, [searchParams])
 
-  const clearOldSession = () => {
-    try {
-      localStorage.clear()
-      sessionStorage.clear()
-        ;['sb-access-token', 'sb-refresh-token', 'supabase-auth-token'].forEach(n => {
-          document.cookie = `${n}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
-        })
-    } catch { /* ignore */ }
-  }
+    // Thoroughly clear any stale sessions on mount
+    clearAuthStorage(true)
+  }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -50,8 +43,9 @@ export default function LoginPage() {
     setError(null)
 
     try {
-      const supabase = createClient()
-      await supabase.auth.signOut({ scope: 'local' })
+      // Force a fresh client and clear local state one last time before sign in
+      const supabase = createClient(true)
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => { })
 
       const { data: auth, error: authErr } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
