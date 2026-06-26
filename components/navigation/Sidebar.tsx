@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { usePathname } from 'next/navigation'
 import { OptimizedLink } from '@/components/ui/optimized-link'
 import { createClient } from '@/lib/supabase/client'
+import { useSettings } from '@/lib/contexts/settings-context'
 import {
   LayoutDashboard,
   Users,
@@ -149,9 +150,9 @@ export default function Sidebar() {
   const pathname = usePathname()
   const { user, loading } = useAuth()
 
+  const { settings } = useSettings()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [isMobileOpen, setIsMobileOpen] = useState(false)
-  const [companyInfo, setCompanyInfo] = useState<any>(null)
   const [unitName, setUnitName] = useState('')
   const [unreadCount, setUnreadCount] = useState(0)
   const [showLogoutDialog, setShowLogoutDialog] = useState(false)
@@ -186,63 +187,21 @@ export default function Sidebar() {
         try {
           const supabase = createClient()
 
-          // Check localStorage cache for company info (valid 10 min)
-          let companyInfoData = null
-          try {
-            const cached = localStorage.getItem('sidebar-company-info')
-            if (cached) {
-              const { value, ts } = JSON.parse(cached)
-              if (Date.now() - ts < 10 * 60 * 1000) companyInfoData = value
-            }
-          } catch { }
-
           // Run all fetches in parallel
-          const [settingsRes, unitRes, notifRes] = await Promise.all([
-            supabase.from('t_settings').select('value').eq('key', 'company_info').maybeSingle(),
+          const [unitRes, notifRes] = await Promise.all([
             (user.role !== 'superadmin' && user.unit_id)
               ? supabase.from('m_units').select('name').eq('id', user.unit_id).single()
               : Promise.resolve(null),
             supabase.from('t_notification').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('read', false),
           ])
 
-          if (settingsRes?.data) {
-            companyInfoData = settingsRes.data.value
-            try { localStorage.setItem('sidebar-company-info', JSON.stringify({ value: companyInfoData, ts: Date.now() })) } catch { }
-          }
-          if (companyInfoData) setCompanyInfo(companyInfoData)
           if (unitRes?.data) setUnitName(unitRes.data.name || '')
           setUnreadCount(notifRes?.count || 0)
         } catch { }
       })()
   }, [user])
 
-  // Listen for storage changes to refresh logo when settings are updated
-  useEffect(() => {
-    const handleStorageChange = () => {
-      if (!user) return
-        ; (async () => {
-          try {
-            const supabase = createClient()
-            const { data } = await supabase.from('t_settings').select('value').eq('key', 'company_info').maybeSingle()
-            if (data) {
-              setCompanyInfo(data.value)
-              try { localStorage.setItem('sidebar-company-info', JSON.stringify({ value: data.value, ts: Date.now() })) } catch { }
-            }
-          } catch { }
-        })()
-    }
-
-    const handleSidebarRefresh = () => {
-      handleStorageChange()
-    }
-
-    window.addEventListener('storage', handleStorageChange)
-    window.addEventListener('sidebar-refresh', handleSidebarRefresh)
-    return () => {
-      window.removeEventListener('storage', handleStorageChange)
-      window.removeEventListener('sidebar-refresh', handleSidebarRefresh)
-    }
-  }, [user])
+  const companyInfo = settings?.companyInfo
 
   const handleLogout = useCallback(async () => {
     try {

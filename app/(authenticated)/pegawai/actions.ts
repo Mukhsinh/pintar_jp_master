@@ -3,6 +3,7 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import type { Pegawai, CreatePegawaiData, UpdatePegawaiData } from '@/lib/types/database.types'
+import { isSuperAdmin as checkSuperAdmin, isUnitManager as checkUnitManager } from '@/lib/auth-utils'
 
 /**
  * Server action to get pegawai with unit data
@@ -22,17 +23,8 @@ export async function getPegawaiWithUnits(
       return { data: [], count: 0, error: 'Tidak terautentikasi' }
     }
 
-    // Check if user is superadmin from auth.users metadata
-    const appRole = user.app_metadata?.role
-    const userRole = user.user_metadata?.role
-    const email = user.email
-
-    const isSuperAdmin =
-      appRole === 'superadmin' ||
-      userRole === 'superadmin' ||
-      email === 'admin@goetengrs.com'
-
-    const isUnitManager = appRole === 'unit_manager' || userRole === 'unit_manager'
+    const isSuperAdmin = checkSuperAdmin(user as any)
+    const isUnitManager = checkUnitManager(user as any)
 
     if (!isSuperAdmin && !isUnitManager) {
       return { data: [], count: 0, error: 'Tidak memiliki akses' }

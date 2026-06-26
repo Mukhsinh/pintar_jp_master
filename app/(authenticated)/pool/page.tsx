@@ -9,6 +9,7 @@ import PoolTable from '@/components/pool/PoolTable'
 import PoolFormDialog from '@/components/pool/PoolFormDialog'
 import PoolDetailsDialog from '@/components/pool/PoolDetailsDialog'
 import PoolCharts from '@/components/pool/PoolCharts'
+import { isSuperAdmin, isUnitManager } from '@/lib/auth-utils'
 
 interface Pool {
   id: string
@@ -44,14 +45,10 @@ export default function PoolManagementPage() {
       // Fetch user role
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        // Use middleware-consistent logic for robust role detection
-        const userMeta = user.user_metadata || {}
-        const appMeta = user.app_metadata || {}
-        const rawRole = (appMeta.role || userMeta.role || '').toString().toLowerCase()
-        const isAdmin = rawRole === 'superadmin' || rawRole === 'admin' || user.email === 'admin@goetengrs.com'
-
-        if (isAdmin) {
+        if (isSuperAdmin(user as any)) {
           setUserRole('superadmin')
+        } else if (isUnitManager(user as any)) {
+          setUserRole('unit_manager')
         } else {
           // Fallback to m_employees table for other roles
           const { data: employeeData } = await supabase

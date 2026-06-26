@@ -14,6 +14,13 @@ export interface DashboardStats {
   }
 }
 
+export interface EmployeeStats {
+  score: number;
+  rank: number;
+  completionStatus: string;
+  unitRank: string;
+}
+
 export interface TopPerformer {
   id: string
   name: string
@@ -753,6 +760,69 @@ export class DashboardService {
       p2: Math.round(avg('p2') * 100) / 100,
       p3: Math.round(avg('p3') * 100) / 100,
       total: Math.round(avg('total') * 100) / 100
+    }
+  }
+
+  /**
+   * Get statistics specifically for a single employee
+   */
+  static async getEmployeeStats(employeeId: string, period?: string, year?: string): Promise<EmployeeStats> {
+    const supabase = await createAdminClient()
+    try {
+      const resolvedPeriods = await this.getResolvedPeriods(supabase, period, year)
+
+      // 1. Get employee data and unit context
+      const { data: employee } = await supabase
+        .from('m_employees')
+        .select('unit_id')
+        .eq('id', employeeId)
+        .single()
+
+      if (!employee) throw new Error('Employee not found')
+
+      // 2. Get assessments for this employee
+      const { data: assessments } = await supabase
+        .from('t_kpi_assessments')
+        .select(`
+          realization_value,
+          target_value,
+          weight_percentage,
+          m_kpi_indicators (
+            m_kpi_categories (
+              category,
+              weight_percentage
+            )
+          )
+        `)
+        .eq('employee_id', employeeId)
+        .in('period', resolvedPeriods)
+
+      const empDataMap = new Map()
+      empDataMap.set(employeeId, { P1: [], P2: [], P3: [] })
+      const group = empDataMap.get(employeeId)
+
+      for (const a of (assessments || [])) {
+        const indicator = (Array.isArray(a.m_kpi_indicators) ? a.m_kpi_indicators[0] : a.m_kpi_indicators) as any;
+        const categoryObj = indicator?.m_kpi_categories;
+        const catName = (Array.isArray(categoryObj) ? categoryObj[0]?.category : categoryObj?.category) as string;
+        if (catName && group[catName]) group[catName].push(a)
+      }
+
+      const score = this.calculateScoreFromGroupedData(group)
+
+      // 3. Calculate rank in unit
+      const topInUnit = await this.getTopPerformers(1000, employee.unit_id, period, year)
+      const rank = topInUnit.findIndex(p => p.id === employeeId) + 1
+
+      return {
+        score: Math.round(score * 100) / 100,
+        rank: rank || 0,
+        completionStatus: assessments && assessments.length > 0 ? 'Selesai' : 'Belum Dinilai',
+        unitRank: rank > 0 ? `${rank} dari ${topInUnit.length}` : '-'
+      }
+    } catch (error) {
+      console.error('Error in getEmployeeStats:', error)
+      return { score: 0, rank: 0, completionStatus: 'Error', unitRank: '-' }
     }
   }
 

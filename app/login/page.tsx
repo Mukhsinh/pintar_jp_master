@@ -5,7 +5,8 @@ import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { clearAuthStorage } from '@/lib/utils/auth-session'
 import { Loader2, Eye, EyeOff, Mail, Lock, MessageCircle } from 'lucide-react'
-import Image from 'next/image'
+
+import { useSettings } from '@/lib/contexts/settings-context'
 
 function getErrorMessage(code: string | null): string | null {
   if (!code) return null
@@ -19,6 +20,7 @@ function getErrorMessage(code: string | null): string | null {
 }
 
 export default function LoginPage() {
+  const { settings, loading: settingsLoading } = useSettings()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -81,30 +83,37 @@ export default function LoginPage() {
 
   const waUrl = `https://wa.me/6285726112001?text=${encodeURIComponent('Halo, saya memerlukan bantuan untuk mengakses aplikasi JASPEL. Mohon bantuannya.')}`
 
-  if (!isMounted) return null
+  if (!isMounted || settingsLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-gray-50/50">
+        <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+      </div>
+    )
+  }
+
+  const companyInfo = settings?.companyInfo
+  const logoSrc = companyInfo?.logo || "/Logo rsud goeteng.jpeg"
+  const orgName = companyInfo?.name || "RSUD Goeteng"
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50/50 p-6 font-sans">
+    <div className="h-screen flex flex-col items-center justify-center bg-gray-50/50 p-4 font-sans overflow-hidden">
 
       {/* Header Section */}
-      <div className="flex flex-col items-center mb-8">
-        <div className="w-24 h-24 bg-white rounded-full shadow-lg flex items-center justify-center overflow-hidden mb-4 border border-gray-100">
-          <Image
-            src="/Logo rsud goeteng.jpeg"
-            alt="Logo RSUD Goeteng"
-            width={75}
-            height={75}
-            className="object-contain"
-            priority
+      <div className="flex flex-col items-center mb-4">
+        <div className="w-20 h-20 bg-white rounded-full shadow-lg flex items-center justify-center overflow-hidden mb-2 border border-gray-100">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={logoSrc}
+            alt={orgName}
+            width={60}
+            height={60}
+            className="object-contain max-h-[60px] max-w-[60px]"
           />
         </div>
-        <h1 className="text-2xl font-extrabold text-gray-800 tracking-tight text-center m-0 uppercase">
-          RSUD Goeteng
+        <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight text-center m-0 uppercase max-w-[350px]">
+          {orgName}
         </h1>
-        <p className="text-[11px] text-gray-400 font-bold tracking-[0.2em] uppercase mt-1 text-center">
-          Taroenadibrata Purbalingga
-        </p>
-        <div className="flex items-center gap-1 mt-3">
+        <div className="flex items-center gap-1 mt-1.5">
           <div className="w-10 h-1 bg-blue-500 rounded-full" />
           <div className="w-4 h-1 bg-blue-300 rounded-full" />
           <div className="w-2 h-1 bg-blue-100 rounded-full" />
@@ -112,12 +121,12 @@ export default function LoginPage() {
       </div>
 
       {/* Login Card */}
-      <div className="w-full max-w-[400px] bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 p-8 md:p-10">
-        <h2 className="text-center text-xs font-black text-blue-600 uppercase tracking-[0.2em] mb-8">
-          Masuk ke Sistem
+      <div className="w-full max-w-[380px] bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 p-6 md:p-8">
+        <h2 className="text-center text-lg font-black text-blue-600 uppercase tracking-[0.2em] mb-5">
+          APLIKASI PINTAR-JP
         </h2>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {/* Email Field */}
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1">
@@ -185,7 +194,7 @@ export default function LoginPage() {
         </form>
 
         {/* Support Section */}
-        <div className="mt-8 pt-6 border-t border-gray-50">
+        <div className="mt-6 pt-4 border-t border-gray-50">
           <a
             href={waUrl}
             target="_blank"
@@ -199,9 +208,9 @@ export default function LoginPage() {
       </div>
 
       {/* Footer */}
-      <footer className="mt-10 text-center">
-        <p className="text-[10px] text-gray-400 font-semibold tracking-wider">
-          PINTAR JP © 2026, Mukhsin Hadi. All Right Reserved
+      <footer className="mt-4 text-center">
+        <p className="text-[11px] text-gray-900 font-bold tracking-wider">
+          {settings?.footer?.text || 'PINTAR JP © 2026. All Right Reserved'}
         </p>
       </footer>
     </div>

@@ -17,6 +17,7 @@ import { UnitPerformanceTable } from '@/components/dashboard/UnitPerformanceTabl
 import { WorstPerformers } from '@/components/dashboard/WorstPerformers'
 import { QuickActions } from '@/components/dashboard/QuickActions'
 import { DashboardService } from '@/lib/services/dashboard.service'
+import { isSuperAdmin, isUnitManager } from '@/lib/auth-utils'
 
 export async function DashboardContent({
   unitId,
@@ -52,11 +53,11 @@ export async function DashboardContent({
 
     let { data: employee, error } = employeeResult
 
-    const authRole = user.app_metadata?.role || user.user_metadata?.role
-    const isSuperAdmin = authRole === 'superadmin' || user.email === 'admin@goetengrs.com'
+    const superAdmin = isSuperAdmin(user as any)
+    const unitManager = isUnitManager(user as any)
 
     if (error || !employee) {
-      if (isSuperAdmin) {
+      if (superAdmin) {
         employee = {
           id: user.id,
           full_name: user.user_metadata?.full_name || 'Super Administrator',
@@ -71,7 +72,7 @@ export async function DashboardContent({
     }
 
     // Use database role if defined, otherwise fallback to Auth metadata for superadmin detection
-    if (employee && !employee.role && isSuperAdmin) {
+    if (employee && !employee.role && superAdmin) {
       employee.role = 'superadmin'
       if (!employee.full_name) employee.full_name = 'Super Administrator'
     }
@@ -92,11 +93,13 @@ export async function DashboardContent({
     let recentActivities: any[] = []
 
     // Determine which unit ID to use for stats
-    const effectiveUnitId = employee.role === 'unit_manager' ? employee.unit_id : unitId
+    const effectiveUnitId = unitManager ? employee.unit_id : unitId
 
-    if (employee.role === 'superadmin' || employee.role === 'unit_manager') {
+    let employeeStats: any = null
+
+    if (superAdmin || unitManager) {
       try {
-        if (employee.role === 'superadmin') {
+        if (superAdmin) {
           const { data: unitsData } = await supabase.from('m_units').select('id, name').order('name')
           units = unitsData || []
         }
@@ -138,10 +141,12 @@ export async function DashboardContent({
         }
       }
     } else {
+      // Employee role: Get their own stats
+      employeeStats = await DashboardService.getEmployeeStats(employee.id, period, year)
       stats = {
         totalEmployees: 0,
         totalUnits: 0,
-        avgScore: 0,
+        avgScore: employeeStats.score,
         completionRate: 0,
         trends: { employees: 0, score: 0, completion: 0 }
       }
@@ -280,20 +285,20 @@ export async function DashboardContent({
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                 <StatCard
                   title="Skor KPI Anda"
-                  value="0"
-                  description="Skor terakhir"
+                  value={employeeStats?.score || 0}
+                  description="Skor periode ini"
                   iconName="Award"
                 />
                 <StatCard
-                  title="Ranking"
-                  value="-"
-                  description="Posisi di unit"
+                  title="Ranking Unit"
+                  value={employeeStats?.unitRank || '-'}
+                  description="Posisi Anda di unit"
                   iconName="TrendingUp"
                 />
                 <StatCard
-                  title="Status"
-                  value="Aktif"
-                  description="Status kepegawaian"
+                  title="Status Penilaian"
+                  value={employeeStats?.completionStatus || 'Belum Ada'}
+                  description="Status verifikasi KPI"
                   iconName="Activity"
                 />
               </div>

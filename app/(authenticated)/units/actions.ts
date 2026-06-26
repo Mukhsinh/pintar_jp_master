@@ -2,6 +2,7 @@
 
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { isSuperAdmin as checkSuperAdmin } from '@/lib/auth-utils'
 
 export async function getUnitsWithCounts() {
     try {
@@ -12,14 +13,7 @@ export async function getUnitsWithCounts() {
             return { data: [], error: 'Tidak terautentikasi' }
         }
 
-        const appRole = user.app_metadata?.role
-        const userRole = user.user_metadata?.role
-        const email = user.email
-
-        const isSuperAdmin =
-            appRole === 'superadmin' ||
-            userRole === 'superadmin' ||
-            email === 'admin@goetengrs.com'
+        const isSuperAdmin = checkSuperAdmin(user as any)
 
         // Use admin client for superadmin to bypass RLS and see ALL units
         // Use regular client for others to respect RLS
