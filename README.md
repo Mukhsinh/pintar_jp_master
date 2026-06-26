@@ -32,3 +32,4 @@ Detail lebih lanjut mengenai sistem dapat ditemukan di folder `DOCS/`:
 
 ## Lisensi
 Aplikasi dikembangkan oleh Mukhsin Hadi. Seluruh hak cipta dilindungi.
+# pintar_jp_master

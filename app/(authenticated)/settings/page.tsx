@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Upload, Save, Image as ImageIcon, AlertCircle } from 'lucide-react'
+import { Upload, Save, Image as ImageIcon, AlertCircle, FileDown, BookOpen, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { saveSettings } from './actions'
@@ -280,6 +280,39 @@ export default function SettingsPage() {
       toast.error(`Gagal menyimpan pengaturan: ${error.message || 'Unknown error'}`)
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handleDownloadOverview = async () => {
+    try {
+      toast.loading('Sedang menyiapkan laporan overview...')
+      const response = await fetch('/api/reports/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reportType: 'system-overview',
+          period: new Date().getFullYear().toString(),
+          format: 'pdf',
+          data: {}
+        }),
+      })
+      if (!response.ok) throw new Error('Gagal mengunduh laporan')
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = Object.assign(document.createElement('a'), {
+        href: url,
+        download: `Overview_Aplikasi_PINTAR_JP.pdf`,
+      })
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      toast.dismiss()
+      toast.success('Laporan overview berhasil diunduh')
+    } catch (err: any) {
+      toast.dismiss()
+      toast.error('Gagal mengunduh laporan: ' + err.message)
     }
   }
 
@@ -608,6 +641,39 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="border-blue-200 bg-blue-50/20">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <BookOpen className="h-5 w-5 text-blue-600" />
+            <CardTitle>Dokumentasi & Ringkasan Aplikasi</CardTitle>
+          </div>
+          <CardDescription>
+            Unduh laporan lengkap mengenai gambaran umum aplikasi, fitur utama, dan panduan penggunaan sistem PINTAR JP.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-4 border rounded-lg bg-white">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Info className="h-5 w-5 text-blue-700" />
+              </div>
+              <div>
+                <p className="font-semibold text-sm">Laporan Gambaran Umum & Manual</p>
+                <p className="text-xs text-gray-500">Format PDF • Lengkap dengan Cover & Sistematika Profesional</p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              className="border-blue-600 text-blue-600 hover:bg-blue-50 w-full md:w-auto"
+              onClick={handleDownloadOverview}
+            >
+              <FileDown className="h-4 w-4 mr-2" />
+              Unduh Laporan PDF
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={isSaving}>

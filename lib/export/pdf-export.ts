@@ -607,10 +607,258 @@ export async function exportToPDF(options: ReportExportOptions): Promise<Uint8Ar
     return await generateDashboardReportPDF(options.data, options.period)
   } else if (options.reportType === 'user-list') {
     return await generateUserListPDF(options.data)
+  } else if (options.reportType === 'system-overview') {
+    return await generateSystemOverviewPDF()
   } else {
     return await generateSummaryReportPDF(options.data, options.period, options.reportType)
   }
 }
+
+/**
+ * Generate Complete System Overview and User Manual PDF
+ */
+export async function generateSystemOverviewPDF(): Promise<Uint8Array> {
+  const doc = new jsPDF()
+  const companyInfo = await getCompanyInfoServer()
+  const footerSetting = await getSettingServer('footer')
+  const footerText = footerSetting?.data?.text || 'Laporan dihasilkan secara otomatis oleh JASPEL System'
+  const appName = companyInfo.appName || 'PINTAR JP'
+  const developerName = companyInfo.developerName || 'Mukhsin Hadi'
+
+  const centerX = doc.internal.pageSize.width / 2
+  const pageWidth = doc.internal.pageSize.width
+  const pageHeight = doc.internal.pageSize.height
+
+  // === 1. COVER PAGE ===
+  // Background/Border
+  doc.setDrawColor(44, 62, 80)
+  doc.setLineWidth(1)
+  doc.rect(10, 10, pageWidth - 20, pageHeight - 20)
+
+  // Logo
+  if (companyInfo.logo) {
+    try {
+      doc.addImage(companyInfo.logo, 'PNG', centerX - 25, 40, 50, 50)
+    } catch (e) { console.error(e) }
+  }
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(28)
+  doc.setTextColor(44, 62, 80)
+  doc.text('LAPORAN GAMBARAN UMUM', centerX, 110, { align: 'center' })
+  doc.text('& MANUAL PENGGUNAAN', centerX, 125, { align: 'center' })
+
+  doc.setFontSize(22)
+  doc.setTextColor(52, 73, 94)
+  doc.text(`APLIKASI ${appName.toUpperCase()}`, centerX, 145, { align: 'center' })
+
+  doc.setDrawColor(52, 73, 94)
+  doc.setLineWidth(2)
+  doc.line(centerX - 40, 155, centerX + 40, 155)
+
+  doc.setFontSize(14)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(100, 100, 100)
+  doc.text('Sistem Informasi Manajemen Kinerja Berbasis Jasa Pelayanan', centerX, 165, { align: 'center' })
+  doc.text('dan Key Performance Indicators (KPI)', centerX, 172, { align: 'center' })
+
+  // Footer Info on Cover
+  doc.setFontSize(12)
+  doc.setTextColor(44, 62, 80)
+  doc.setFont('helvetica', 'bold')
+  doc.text(companyInfo.name || 'RSUD dr. R. Goeteng Taroenadibrata', centerX, 230, { align: 'center' })
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  doc.text(`Dikembangkan Oleh: ${developerName}`, centerX, 250, { align: 'center' })
+  doc.text(`Tahun 2026`, centerX, 258, { align: 'center' })
+
+  // === 2. SISTEMATIKA / DAFTAR ISI ===
+  doc.addPage()
+  await addKopSurat(doc, companyInfo)
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  doc.text('DAFTAR ISI / SISTEMATIKA LAPORAN', 15, 45)
+
+  const toc = [
+    ['I.   PENDAHULUAN', 'Halaman 3'],
+    ['II.  GAMBARAN UMUM SISTEM', 'Halaman 3'],
+    ['III. MODUL DASHBOARD & VISUALISASI', 'Halaman 4'],
+    ['IV.  MANAJEMEN PEGAWAI & UNIT KERJA', 'Halaman 4'],
+    ['V.   KONFIGURASI KPI & INDIKATOR', 'Halaman 5'],
+    ['VI.  PENILAIAN KINERJA (ASSESSMENT)', 'Halaman 5'],
+    ['VII. MANAJEMEN DANA (POOL) & PENDAPATAN', 'Halaman 6'],
+    ['VIII. LAPORAN & EKSPOR DATA', 'Halaman 6'],
+    ['IX.  KESIMPULAN & PENUTUP', 'Halaman 7'],
+  ]
+
+  autoTable(doc, {
+    startY: 55,
+    body: toc,
+    theme: 'plain',
+    styles: { fontSize: 11, cellPadding: 4 },
+    columnStyles: {
+      0: { fontStyle: 'bold' },
+      1: { halign: 'right' }
+    }
+  })
+
+  // === 3. CONTENT PAGE: PENDAHULUAN & GAMBARAN UMUM ===
+  doc.addPage()
+  await addKopSurat(doc, companyInfo)
+
+  let y = 45
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(14)
+  doc.text('I. PENDAHULUAN', 15, y); y += 10
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  const intro = `${appName} adalah sistem informasi enterprise yang dirancang khusus untuk mengelola Jasa Pelayanan (JASPEL) dan evaluasi kinerja berbasis Key Performance Indicators (KPI). Sistem ini bertujuan untuk meningkatkan transparansi, akurasi, dan efisiensi dalam distribusi insentif pegawai berdasarkan capaian kinerja yang terukur.`
+  const splitIntro = doc.splitTextToSize(intro, pageWidth - 30)
+  doc.text(splitIntro, 15, y); y += (splitIntro.length * 6) + 5
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(14)
+  doc.text('II. GAMBARAN UMUM SISTEM', 15, y); y += 10
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  const overview = `Sistem ini mengintegrasikan data keuangan (pendapatan/revenue), data kepegawaian, dan instrumen penilaian kinerja. Dengan arsitektur modern berbasis Next.js dan Supabase, ${appName} mampu menangani perhitungan kompleks secara real-time dengan skalabilitas tinggi.`
+  const splitOverview = doc.splitTextToSize(overview, pageWidth - 30)
+  doc.text(splitOverview, 15, y); y += (splitOverview.length * 6) + 10
+
+  const features = [
+    ['Otomatisasi Kalkulasi', 'Menghitung insentif berdasarkan PIR (Poin Indeks Rupiah) secara otomatis.'],
+    ['Fleksibilitas KPI', 'Konfigurasi indikator yang dapat disesuaikan untuk setiap unit kerja.'],
+    ['Visualisasi Data', 'Grafik interaktif untuk memantau performa unit dan individu.'],
+    ['Audit Trail', 'Pencatatan setiap perubahan data untuk keamanan dan akuntabilitas.']
+  ]
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Fitur Unggulan', 'Deskripsi Keunggulan']],
+    body: features,
+    theme: 'striped',
+    headStyles: { fillColor: [44, 62, 80] },
+    styles: { fontSize: 10 }
+  })
+
+  // === 4. MODUL DASHBOARD & PEGAWAI ===
+  doc.addPage()
+  await addKopSurat(doc, companyInfo)
+  y = 45
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(14)
+  doc.text('III. MODUL DASHBOARD & VISUALISASI', 15, y); y += 10
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  const dashboardDesc = 'Dashboard menyediakan ringkasan eksekutif mengenai total realisasi pendapatan, alokasi jasa pelayanan, tingkat penyelesaian penilaian, hingga daftar pegawai dengan performa terbaik. Visualisasi menggunakan grafik tren untuk memudahkan pengambilan keputusan.'
+  const splitDashboard = doc.splitTextToSize(dashboardDesc, pageWidth - 30)
+  doc.text(splitDashboard, 15, y); y += (splitDashboard.length * 6) + 15
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(14)
+  doc.text('IV. MANAJEMEN PEGAWAI & UNIT KERJA', 15, y); y += 10
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  const employeeDesc = 'Modul ini digunakan untuk mengelola data master pegawai, termasuk jabatan, golongan, dan unit penempatan. Sistem mendukung impor data massal dari Excel guna mempercepat proses input initial data.'
+  const splitEmployee = doc.splitTextToSize(employeeDesc, pageWidth - 30)
+  doc.text(splitEmployee, 15, y); y += (splitEmployee.length * 6) + 10
+
+  // === 5. KPI & ASSESSMENT ===
+  doc.addPage()
+  await addKopSurat(doc, companyInfo)
+  y = 45
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(14)
+  doc.text('V. KONFIGURASI KPI & INDIKATOR', 15, y); y += 10
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  const kpiDesc = 'Setiap unit kerja memiliki standar penilaian yang berbeda. Modul ini memungkinkan administrator untuk mengatur kategori (P1, P2, P3), bobot indikator, dan target tahunan/bulanan secara spesifik per unit.'
+  const splitKpi = doc.splitTextToSize(kpiDesc, pageWidth - 30)
+  doc.text(splitKpi, 15, y); y += (splitKpi.length * 6) + 15
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(14)
+  doc.text('VI. PENILAIAN KINERJA (ASSESSMENT)', 15, y); y += 10
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  const assessmentDesc = 'Proses penilaian dilakukan secara berkala. Atasan atau manajer unit menginput realisasi dari setiap indikator pegawai. Sistem secara otomatis menghitung skor akhir berdasarkan bobot yang telah ditetapkan.'
+  const splitAssessment = doc.splitTextToSize(assessmentDesc, pageWidth - 30)
+  doc.text(splitAssessment, 15, y); y += (splitAssessment.length * 6) + 10
+
+  // === 6. POOL & REPORTS ===
+  doc.addPage()
+  await addKopSurat(doc, companyInfo)
+  y = 45
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(14)
+  doc.text('VII. MANAJEMEN DANA (POOL) & PENDAPATAN', 15, y); y += 10
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  const poolDesc = 'Modul manajemen dana digunakan untuk mencatat total pendapatan kotor, potongan operasional, hingga menghasilkan nilai Net Pool yang siap didistribusikan sebagai jasa pelayanan sesuai persentase alokasi global.'
+  const splitPool = doc.splitTextToSize(poolDesc, pageWidth - 30)
+  doc.text(splitPool, 15, y); y += (splitPool.length * 6) + 15
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(14)
+  doc.text('VIII. LAPORAN & EKSPOR DATA', 15, y); y += 10
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  const reportDesc = 'Hasil akhir dari sistem adalah berbagai laporan profesional. Antara lain: Slip Insentif Individu, Rekapitulasi Per Unit, Laporan Pencapaian KPI, hingga Daftar Pengguna Sistem. Semua laporan dapat diunduh dalam format PDF dan Excel.'
+  const splitReport = doc.splitTextToSize(reportDesc, pageWidth - 30)
+  doc.text(splitReport, 15, y); y += (splitReport.length * 6) + 10
+
+  // === 7. KESIMPULAN ===
+  doc.addPage()
+  await addKopSurat(doc, companyInfo)
+  y = 45
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(14)
+  doc.text('IX. KESIMPULAN & PENUTUP', 15, y); y += 10
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  const closing = `Dengan diterapkannya ${appName}, diharapkan manajemen RSUD dr. R. Goeteng Taroenadibrata dapat mengelola sumber daya manusia dan keuangan secara lebih profesional, transparan, dan berbasis kinerja nyata.`
+  const splitClosing = doc.splitTextToSize(closing, pageWidth - 30)
+  doc.text(splitClosing, 15, y); y += (splitClosing.length * 6) + 20
+
+  // Signatures
+  doc.setFont('helvetica', 'bold')
+  doc.text('Tertanda,', pageWidth - 70, y)
+  y += 25
+  doc.text('( Mukhsin Hadi )', pageWidth - 70, y)
+  y += 5
+  doc.setFont('helvetica', 'normal')
+  doc.text('Lead Developer', pageWidth - 70, y)
+
+  // Add footer to every page
+  const pageCount = (doc as any).internal.getNumberOfPages()
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i)
+    const pageHeight = doc.internal.pageSize.height
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'italic')
+    doc.setTextColor(150, 150, 150)
+    doc.text(footerText, 105, pageHeight - 10, { align: 'center' })
+    doc.text(`Dikembangkan oleh: ${developerName} | Halaman ${i} dari ${pageCount}`, doc.internal.pageSize.width - 15, pageHeight - 10, { align: 'right' })
+  }
+
+  return new Uint8Array(doc.output('arraybuffer'))
+}
+
 
 /**
  * Generate User List PDF
