@@ -96,24 +96,24 @@ export default function LoginPage() {
   const orgName = companyInfo?.name || "RSUD Goeteng"
 
   return (
-    <div className="h-screen flex flex-col items-center justify-center bg-gray-50/50 p-4 font-sans overflow-hidden">
+    <div className="h-screen flex flex-col items-center justify-center bg-gray-50/50 p-2 font-sans overflow-hidden">
 
       {/* Header Section */}
-      <div className="flex flex-col items-center mb-4">
-        <div className="w-20 h-20 bg-white rounded-full shadow-lg flex items-center justify-center overflow-hidden mb-2 border border-gray-100">
+      <div className="flex flex-col items-center mb-3">
+        <div className="w-16 h-16 bg-white rounded-full shadow-lg flex items-center justify-center overflow-hidden mb-1.5 border border-gray-100">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={logoSrc}
             alt={orgName}
-            width={60}
-            height={60}
-            className="object-contain max-h-[60px] max-w-[60px]"
+            width={48}
+            height={48}
+            className="object-contain max-h-[48px] max-w-[48px]"
           />
         </div>
-        <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight text-center m-0 uppercase max-w-[350px]">
+        <h1 className="text-xl font-extrabold text-gray-900 tracking-tight text-center m-0 uppercase max-w-[350px]">
           {orgName}
         </h1>
-        <div className="flex items-center gap-1 mt-1.5">
+        <div className="flex items-center gap-1 mt-1">
           <div className="w-10 h-1 bg-blue-500 rounded-full" />
           <div className="w-4 h-1 bg-blue-300 rounded-full" />
           <div className="w-2 h-1 bg-blue-100 rounded-full" />
@@ -121,12 +121,12 @@ export default function LoginPage() {
       </div>
 
       {/* Login Card */}
-      <div className="w-full max-w-[380px] bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 p-6 md:p-8">
-        <h2 className="text-center text-lg font-black text-blue-600 uppercase tracking-[0.2em] mb-5">
+      <div className="w-full max-w-[360px] bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100 p-5 md:p-6">
+        <h2 className="text-center text-base font-black text-blue-600 uppercase tracking-[0.2em] mb-4">
           APLIKASI PINTAR-JP
         </h2>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3">
           {/* Email Field */}
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest ml-1">
@@ -140,7 +140,7 @@ export default function LoginPage() {
                 onChange={e => setEmail(e.target.value)}
                 placeholder="nama@email.com"
                 required
-                className="w-full h-12 pl-12 pr-4 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium transition-all focus:outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50/50"
+                className="w-full h-11 pl-12 pr-4 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium transition-all focus:outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50/50"
               />
             </div>
           </div>
@@ -158,7 +158,7 @@ export default function LoginPage() {
                 onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
-                className="w-full h-12 pl-12 pr-12 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium transition-all focus:outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50/50"
+                className="w-full h-11 pl-12 pr-12 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium transition-all focus:outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50/50"
               />
               <button
                 type="button"
@@ -171,16 +171,15 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 font-semibold animate-in fade-in duration-300">
+            <div className="p-2 bg-red-50 border border-red-100 rounded-xl text-xs text-red-600 font-semibold animate-in fade-in duration-300">
               {error}
             </div>
           )}
 
-          {/* Login Button */}
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full h-12 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold rounded-xl text-sm shadow-lg shadow-blue-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+            className="w-full h-11 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold rounded-xl text-sm shadow-lg shadow-blue-200 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
           >
             {isLoading ? (
               <>
@@ -194,12 +193,12 @@ export default function LoginPage() {
         </form>
 
         {/* Support Section */}
-        <div className="mt-6 pt-4 border-t border-gray-50">
+        <div className="mt-4 pt-3 border-t border-gray-50">
           <a
             href={waUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 w-full h-12 bg-[#f0fdf4] border border-[#bbf7d0] rounded-xl text-[#16a34a] text-xs font-bold hover:bg-[#dcfce7] transition-all"
+            className="flex items-center justify-center gap-2 w-full h-11 bg-[#f0fdf4] border border-[#bbf7d0] rounded-xl text-[#16a34a] text-xs font-bold hover:bg-[#dcfce7] transition-all"
           >
             <MessageCircle size={16} />
             Hubungi Bantuan Admin
@@ -208,7 +207,7 @@ export default function LoginPage() {
       </div>
 
       {/* Footer */}
-      <footer className="mt-4 text-center">
+      <footer className="mt-2 text-center">
         <p className="text-[11px] text-gray-900 font-bold tracking-wider">
           {settings?.footer?.text || 'PINTAR JP © 2026. All Right Reserved'}
         </p>
